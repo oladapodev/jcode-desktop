@@ -191,6 +191,9 @@ svg.i.lg { width: 20px; height: 20px; }
 .seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .seg button { height: 24px; padding: 0 10px; border-radius: 7px; font-size: 12.5px; color: var(--text-3); display: inline-flex; align-items: center; gap: 6px; }
 .seg button.on { background: var(--surface-2); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); cursor: pointer; padding: 3px 8px; border-radius: 6px; }
+.conn:hover { background: var(--hover); }
+.conn.tip:hover::after { left: auto; right: 0; transform: none; }
 .live-badge { display: none; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .08em; color: #fff; background: #e5484d; padding: 3px 8px; border-radius: 6px; }
 body.stream .live-badge { display: inline-flex; }
 body.stream .secret { filter: blur(6px); user-select: none; }
@@ -467,6 +470,7 @@ input.text:focus { border-color: var(--border-strong); box-shadow: 0 0 0 3px var
     <div class="spacer"></div>
     <button class="search-trigger" onclick="openPalette()"><svg class="i sm"><use href="#search"/></svg>Search or run a command<span class="kbd">Ctrl K</span></button>
     <div class="spacer"></div>
+    <span class="conn tip" data-tip="Connected to jcode 0.98.1" onclick="simulateReconnect()"><span class="status done"></span><span id="conn-label">Connected</span></span>
     <span class="live-badge"><svg class="i sm"><use href="#radio"/></svg>LIVE</span>
     <div class="wc"><button title="Minimize"><svg class="i sm"><path d="M5 12h14"/></svg></button><button title="Maximize"><svg class="i sm"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button><button title="Close"><svg class="i sm"><use href="#x"/></svg></button></div>
   </header>
@@ -1097,7 +1101,9 @@ const themes = [
 function settingsBody(key) {
   switch (key) {
     case 'general': return `<h2>General</h2><p>Defaults for new sessions.</p>
-      <div class="set-group">${sel('Default project folder', 'Where Super+Enter opens a session', ['~/Desktop/tasued', '~/Desktop/jcode', 'Home'])}${sel('Layout', 'Chat is focused. Canvas shows many sessions side by side.', ['Chat', 'Canvas'])}${tg(true, 'Restore sessions on launch')}${tg(true, 'Show coaching hints')}${tg(false, 'Open new sessions in a git worktree')}</div>`;
+      <div class="set-group">${sel('Default project folder', 'Where Super+Enter opens a session', ['~/Desktop/tasued', '~/Desktop/jcode', 'Home'])}${sel('Layout', 'Chat is focused. Canvas shows many sessions side by side.', ['Chat', 'Canvas'])}${tg(true, 'Restore sessions on launch', 'Also recovers your workspace after a crash')}${tg(true, 'Auto-continue', 'Keep going automatically while the plan has unfinished tasks')}${tg(true, 'Show coaching hints')}${tg(false, 'Open new sessions in a git worktree')}</div>
+      <div class="set-group"><div class="set-row"><div class="lbl"><div class="t">Pop out a session</div><div class="d">Open the current chat in its own small window (single-panel mode)</div></div><button class="btn sm" onclick="toast('Opened in a new window','external')">Pop out</button></div>
+      <div class="set-row"><div class="lbl"><div class="t">Learn Jcode</div><div class="d">A 3-step guided tour of sessions, panels and shortcuts</div></div><button class="btn sm" onclick="openModal('learn')">Start tour</button></div></div>`;
     case 'account': return `<h2>Account &amp; sync</h2><p>Sign in once. Sessions, settings and logins follow you to every device and machine.</p>
       <div class="set-group"><div class="set-row"><div class="avatar" style="width:40px;height:40px">D</div><div class="lbl"><div class="t">dev</div><div class="d secret">dev@example.com · Pro plan</div></div><button class="btn sm">Manage plan</button><button class="btn sm ghost">Sign out</button></div></div>
       <div class="set-group-title">Sync</div><div class="set-group">${tg(true, 'Sync sessions and history', 'Continue any session on desktop, web or phone')}${tg(true, 'Sync provider logins', 'Stored end-to-end encrypted in your vault')}${tg(true, 'Sync settings and themes')}${tg(false, 'Sync memory', 'What the agent remembers about you and your projects')}</div>
@@ -1132,7 +1138,8 @@ function settingsBody(key) {
     case 'keyboard': return `<h2>Keyboard</h2><p>Every action is also in the command palette.</p>
       <div class="set-group"><div class="shortcuts">${[['Command palette', 'Ctrl K'], ['New session', 'Ctrl N'], ['New terminal', 'Ctrl T'], ['Toggle sidebar', 'Ctrl B'], ['Toggle inspector', 'Ctrl I'], ['Switch machine', 'Ctrl M'], ['Fork session', 'Ctrl Shift F'], ['Hold to talk', 'Ctrl Shift V'], ['Next panel (canvas)', 'Alt →'], ['Close panel', 'Ctrl W'], ['Settings', 'Ctrl ,']].map(k => `<div>${k[0]}</div><div><span class="kbd">${k[1]}</span></div>`).join('')}</div></div>`;
     case 'updates': return `<h2>Updates &amp; about</h2><p>Jcode Desktop 0.6.1 · engine jcode 0.98.1</p>
-      <div class="set-group">${tg(true, 'Install updates automatically')}${sel('Channel', '', ['Stable', 'Beta'])}<div class="set-row"><div class="lbl"><div class="t">You're up to date</div><div class="d">Checked 5 minutes ago</div></div><button class="btn sm">Check now</button><button class="btn sm ghost">Changelog</button></div></div>`;
+      <div class="set-group">${tg(true, 'Install updates automatically')}${sel('Channel', '', ['Stable', 'Beta'])}<div class="set-row"><div class="lbl"><div class="t">You're up to date</div><div class="d">Checked 5 minutes ago</div></div><button class="btn sm">Check now</button><button class="btn sm ghost">Changelog</button></div></div>
+      <div class="set-group-title">Developer</div><div class="set-group"><div class="set-row"><div class="lbl"><div class="t">Publish this app</div><div class="d">Commit, push, release and publish from your own checkout, tracked in a session</div></div><button class="btn sm" onclick="toast('Publish pipeline started','download')">Publish…</button></div>${tg(false, 'Self-dev mode', 'Hot reload the UI while editing the app itself')}</div>`;
   }
 }
 function prov(name, d, color, letter, on) {
@@ -1243,6 +1250,9 @@ const paletteItems = [
   ['Machines', 'cloud', 'Run on gcp-home', () => setMachine('gcp'), ''],
   ['Machines', 'zap', 'Run in a Daytona sandbox', () => setMachine('daytona'), ''],
   ['Machines', 'plus', 'Add a machine…', () => openModal('add-machine'), ''],
+  ['Actions', 'external', 'Pop out session to its own window', () => toast('Opened in a new window', 'external'), ''],
+  ['Actions', 'book', 'Learn Jcode (guided tour)', () => openModal('learn'), ''],
+  ['Actions', 'download', 'Publish this app', () => toast('Publish pipeline started', 'download'), '/publish'],
   ['Settings', 'sun', 'Change theme', () => go('settings', 'appearance'), ''],
   ['Settings', 'key', 'Manage logins', () => go('settings', 'models'), '/login'],
   ['Settings', 'user', 'Account & sync', () => go('settings', 'account'), ''],
@@ -1292,11 +1302,21 @@ function openModal(which) {
       <div class="mb" style="align-items:center;text-align:center"><div style="width:180px;height:180px;border-radius:14px;background:repeating-conic-gradient(var(--text) 0 25%, var(--surface) 0 50%) 0 0/18px 18px;border:10px solid var(--surface)"></div>
       <div>Open <b>jcode.app</b> on your phone and scan this code.</div><div style="font-size:12.5px;color:var(--text-3)">Expires in 5 minutes</div></div>`;
   }
+  if (which === 'learn') {
+    m.innerHTML = `<div class="mh">Learn Jcode · 1 of 3<button class="icon-btn" onclick="closeModal()">${ic('x')}</button></div>
+      <div class="mb"><b>Sessions live in the sidebar</b><div style="color:var(--text-2)">Each project groups its sessions. The dot shows status: working, needs you, or done. Press <span class="kbd">Ctrl N</span> for a new one and <span class="kbd">Ctrl K</span> to find anything.</div></div>
+      <div class="mf"><button class="btn ghost" onclick="closeModal()">Skip</button><button class="btn primary" onclick="closeModal();toast('Next: the Inspector','book')">Next</button></div>`;
+  }
   $('#modal-scrim').classList.add('on');
 }
 function closeModal() { $('#modal-scrim').classList.remove('on'); }
 
 /* ---------------- Misc ---------------- */
+function simulateReconnect() {
+  const s = $('.conn .status'), l = $('#conn-label');
+  s.className = 'status waiting'; l.textContent = 'Reconnecting…';
+  setTimeout(() => { s.className = 'status done'; l.textContent = 'Connected'; toast('Reconnected. Nothing was lost.', 'check'); }, 1600);
+}
 function toggleSidebar() { $('#app').classList.toggle('sb-collapsed'); }
 function toggleStream() { document.body.classList.toggle('stream'); const on = document.body.classList.contains('stream'); $('#stream-btn').classList.toggle('on', on); toast(on ? 'Stream mode on. Secrets are hidden.' : 'Stream mode off', 'radio'); }
 function toast(msg, icon = 'check') {
