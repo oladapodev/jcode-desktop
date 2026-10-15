@@ -59,7 +59,7 @@ def verify(output, env, root):
 
         def check(image):
             assert image.size == (1440, 1000), "Default screenshot dimensions required"
-            words = ui.words(image, (0, 0, 224, 1000), label, psm=6)
+            words = ui.words(image, (0, 0, 252, 1000), label, psm=6)
             title = phrase_bounds(words, "Review markdown")
             for phrase in (*LABELS, "Swarm", "Open lead", "Show all", "Show fewer",
                            "working", "need attention"):

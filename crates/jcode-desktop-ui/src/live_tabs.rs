@@ -6,8 +6,8 @@ use crate::panel::folder_session_title;
 const TAB_FLOAT_GAP: f32 = 4.0;
 const TAB_GAP: f32 = 6.0;
 const TAB_HEIGHT: f32 = FOLDER_CONTENT_INSET - TAB_FLOAT_GAP;
-pub(super) const TAB_STATUS_WIDTH: f32 = 88.0;
-/// Compact windows swap the FPS readout for a sidebar menu button.
+pub(super) const TAB_STATUS_WIDTH: f32 = 104.0;
+/// Compact windows swap the connection status for a sidebar menu button.
 const TAB_MENU_WIDTH: f32 = 36.0;
 const TAB_NEW_WIDTH: f32 = 40.0;
 /// Pointer route to the next workspace, beside the new-session plus.
@@ -40,6 +40,11 @@ pub(super) fn minimap_fits_header(canvas_width: f32) -> bool {
 /// Reserve a compact tag only when a full selected tab still fits. The tag
 /// precedes FPS, so all other left-anchored header content shares this offset.
 pub(super) fn version_header_width(tab_budget: f32) -> f32 {
+    // Quiet by default: the pill appears only for an update, a restart, a
+    // failure, or a check the user just asked for.
+    if !version::needs_attention() {
+        return 0.0;
+    }
     let version_width = version::pill_width();
     if tab_budget >= version_width + 208.0 + TAB_GROUP_LABEL_WIDTH {
         version_width
@@ -933,10 +938,8 @@ impl Workspace {
                     ),
             );
         }
-        // Sample only on existing redraws, never wake an idle window for FPS.
-        let fps = self
-            .fps_counter
-            .label(Instant::now(), || window.frame_duration_snapshot());
+        let connected = self.connected;
+        let status_label = if connected { "Connected" } else { "Offline" };
         div()
             .debug_selector(|| "workspace-tab-row".into())
             .absolute()
@@ -950,7 +953,7 @@ impl Workspace {
                 } else {
                     el.child(
                         div()
-                            .debug_selector(|| "fps-counter-slot".into())
+                            .debug_selector(|| "header-status-slot".into())
                             .absolute()
                             .left(px(version_width))
                             .top_0()
@@ -958,14 +961,42 @@ impl Workspace {
                             .h(px(TAB_HEIGHT))
                             .flex()
                             .items_center()
-                            .pl_2()
+                            .pl_1()
+                            .overflow_hidden()
                             .child(
+                                // Connection state; the build lives in its tooltip and
+                                // a click checks for updates.
                                 div()
-                                    .debug_selector(|| "fps-counter".into())
+                                    .id("header-status")
+                                    .debug_selector(|| "header-status".into())
+                                    .h(px(22.0))
+                                    .px(px(8.0))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .rounded(px(7.0))
+                                    .cursor_pointer()
+                                    .occlude()
+                                    .hover(|el| el.bg(Theme::global().PANEL_BG))
                                     .font_family(Theme::global().FONT_UI)
-                                    .text_size(px(10.0))
+                                    .text_size(px(11.5))
                                     .text_color(Theme::global().TEXT_DIM)
-                                    .child(fps),
+                                    .tooltip(|_, cx| cx.new(|_| crate::build_info::BuildTooltip).into())
+                                    .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
+                                        cx.stop_propagation();
+                                        window.prevent_default();
+                                    })
+                                    .on_click(cx.listener(|_, _, _, cx| {
+                                        cx.stop_propagation();
+                                        Self::check_and_apply_update();
+                                        cx.notify();
+                                    }))
+                                    .child(div().flex_none().size(px(6.0)).rounded_full().bg(if connected {
+                                        Theme::global().OK
+                                    } else {
+                                        Theme::global().WARN
+                                    }))
+                                    .child(status_label),
                             ),
                     )
                 }

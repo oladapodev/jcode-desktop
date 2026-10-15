@@ -7,6 +7,7 @@ use super::*;
 pub(super) const BRANCH_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.6"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><path d="M6 7.5v9M18 7.5c0 6-12 2-12 8"/></g></svg>"#;
 pub(super) const FOLDER_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Zm0 3h18" fill="none" stroke="black" stroke-width="1.6" stroke-linejoin="round"/></svg>"#;
 pub(super) const HIDE_SIDEBAR_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16M16 9.5 13.5 12l2.5 2.5"/></g></svg>"#;
+pub(super) const NEW_SESSION_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 1 1 3 3L12 15l-4 1 1-4Z"/></g></svg>"#;
 
 #[derive(Default)]
 pub(super) struct State {
@@ -271,35 +272,22 @@ impl Workspace {
 
     /// Always-visible entry points at the top of the thread list.
     pub(super) fn render_sidebar_quick_actions(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let pill = |id: &'static str, label: &'static str, glyph: gpui::AnyElement| {
-            let tip = match id {
-                "sidebar-open-project" => "Open a project folder",
-                _ => "New thread in the default directory",
-            };
+        let theme = Theme::global();
+        // Square icon button used for the secondary actions.
+        let icon_button = |id: &'static str, tip: &'static str, glyph: gpui::AnyElement| {
             div()
                 .id(id)
                 .debug_selector(move || id.into())
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .h(px(26.0))
-                .px_2()
+                .flex_none()
+                .size(px(32.0))
                 .flex()
                 .items_center()
                 .justify_center()
-                .gap_1()
-                .rounded_full()
+                .rounded(px(9.0))
                 .cursor_pointer()
-                .bg(Theme::global().TOOL_BG)
-                .text_size(px(11.0))
-                .text_color(Theme::global().TEXT_DIM)
-                .hover(|el| {
-                    el.bg(Theme::global().PANEL_BG)
-                        .text_color(Theme::global().TEXT)
-                })
+                .hover(|el| el.bg(Theme::global().PANEL_BG))
                 .tooltip(move |_, cx| cx.new(|_| remotes::HeaderTooltip(tip.into())).into())
                 .child(glyph)
-                .child(div().min_w_0().truncate().child(label))
         };
         div()
             .flex_none()
@@ -308,84 +296,70 @@ impl Workspace {
             .pl_2()
             .pr(px(crate::scrollbar::GUTTER + 4.0))
             .pt_2()
+            .pb_1()
             .flex()
-            .gap_2()
+            .items_center()
+            .gap_1()
             .child(
-                pill(
-                    "sidebar-new-thread",
-                    "Thread",
-                    div().child("+").into_any_element(),
+                // Primary: the one filled control in the sidebar.
+                div()
+                    .id("sidebar-new-thread")
+                    .debug_selector(|| "sidebar-new-thread".into())
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(32.0))
+                    .px(px(10.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .rounded(px(9.0))
+                    .cursor_pointer()
+                    .bg(theme.PANEL_BG)
+                    .text_size(px(12.5))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(theme.TEXT)
+                    .hover(|el| el.bg(Theme::global().USER_BG))
+                    .tooltip(|_, cx| cx.new(|_| remotes::HeaderTooltip("New session".into())).into())
+                    .child(icon(NEW_SESSION_ICON, 14.0))
+                    .child(div().min_w_0().truncate().child("New session"))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                            this.missed("new_panel", cx);
+                            this.open_new_session(cx);
+                        }),
+                    ),
+            )
+            .child(
+                icon_button("sidebar-open-project", "Open folder", icon(FOLDER_ICON, 15.0))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                            this.open_folder(&OpenFolder, window, cx);
+                        }),
+                    ),
+            )
+            .child(
+                icon_button(
+                    "sidebar-new-collection",
+                    "New collection",
+                    icon(sidebar_collections::COLLECTION_ICON, 14.0),
                 )
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(|this, _, window, cx| {
                         window.prevent_default();
                         cx.stop_propagation();
-                        this.missed("new_panel", cx);
-                        this.open_new_session(cx);
+                        this.begin_new_collection(None, window, cx);
                     }),
                 ),
             )
             .child(
-                pill("sidebar-open-project", "Project", icon(FOLDER_ICON, 12.0)).on_mouse_down(
-                    gpui::MouseButton::Left,
-                    cx.listener(|this, _, window, cx| {
-                        window.prevent_default();
-                        cx.stop_propagation();
-                        this.open_folder(&OpenFolder, window, cx);
-                    }),
-                ),
-            )
-            .child(
-                // Icon-only, like hide: four labelled pills do not fit 224px.
-                div()
-                    .id("sidebar-new-collection")
-                    .debug_selector(|| "sidebar-new-collection".into())
-                    .flex_none()
-                    .size(px(26.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .cursor_pointer()
-                    .bg(Theme::global().TOOL_BG)
-                    .hover(|el| el.bg(Theme::global().PANEL_BG))
-                    .tooltip(|_, cx| {
-                        cx.new(|_| {
-                            remotes::HeaderTooltip(
-                                "New collection: group chats your own way".into(),
-                            )
-                        })
-                        .into()
-                    })
-                    .child(icon(sidebar_collections::COLLECTION_ICON, 13.0))
-                    .on_mouse_down(
-                        gpui::MouseButton::Left,
-                        cx.listener(|this, _, window, cx| {
-                            window.prevent_default();
-                            cx.stop_propagation();
-                            this.begin_new_collection(None, window, cx);
-                        }),
-                    ),
-            )
-            .child(
-                div()
-                    .id("sidebar-hide")
-                    .debug_selector(|| "sidebar-hide".into())
-                    .flex_none()
-                    .size(px(26.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .cursor_pointer()
-                    .bg(Theme::global().TOOL_BG)
-                    .hover(|el| el.bg(Theme::global().PANEL_BG))
-                    .tooltip(|_, cx| {
-                        cx.new(|_| remotes::HeaderTooltip("Hide sidebar (Ctrl+B)".into()))
-                            .into()
-                    })
-                    .child(icon(HIDE_SIDEBAR_ICON, 14.0))
+                icon_button("sidebar-hide", "Hide sidebar  Ctrl B", icon(HIDE_SIDEBAR_ICON, 15.0))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, window, cx| {

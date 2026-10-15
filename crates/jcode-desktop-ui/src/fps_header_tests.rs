@@ -30,7 +30,7 @@ fn fps_and_new_session_share_the_tab_row_without_a_top_header(cx: &mut gpui::Tes
                         .debug_bounds(if !sidebar || responsive::is_compact(width) {
                             "compact-sidebar-toggle"
                         } else {
-                            "fps-counter"
+                            "header-status"
                         })
                         .unwrap();
                     let tabs = vcx.debug_bounds("live-session-tabs").unwrap();

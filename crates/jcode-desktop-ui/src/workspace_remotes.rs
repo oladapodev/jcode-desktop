@@ -843,7 +843,7 @@ impl Workspace {
         let host = self.remotes.default_host.as_deref();
         let button = |id: &'static str, icon: &'static [u8], title: String, selected: bool| {
             let ink = if selected {
-                theme.ACCENT
+                theme.TEXT
             } else {
                 theme.TEXT_DIM
             };
@@ -855,10 +855,10 @@ impl Workspace {
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded_md()
+                .rounded(px(7.0))
                 .cursor_pointer()
-                .when(selected, |el| el.bg(theme.ACCENT_DIM))
-                .hover(|el| el.bg(theme.TOOL_BG))
+                .when(selected, |el| el.bg(theme.PANEL_BG))
+                .hover(|el| el.bg(theme.PANEL_BG))
                 .tooltip(move |_, cx| cx.new(|_| HeaderTooltip(title.clone().into())).into())
                 .child(gpui::svg().data(icon).size(px(16.0)).text_color(ink))
         };
@@ -870,9 +870,7 @@ impl Workspace {
             .flex()
             .flex_col()
             .gap_1()
-            .border_b_1()
-            .border_color(theme.PANEL_BORDER)
-            .text_size(px(10.5))
+            .text_size(px(11.5))
             .child(
                 div()
                     .flex()

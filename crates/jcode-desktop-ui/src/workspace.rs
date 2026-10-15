@@ -321,7 +321,7 @@ Composer shortcuts ported from the TUI:
 - Escape: clear the draft
 
 Start with a concise orientation, then invite me to ask how to use Jcode."#;
-const SIDEBAR_WIDTH: f32 = 224.0;
+const SIDEBAR_WIDTH: f32 = 252.0;
 // With no connector gap the gutter stays inside the sidebar in every layout.
 const SIDEBAR_SCROLLBAR_OUTSET: f32 = 0.0;
 const ACCOUNT_ROW_HEIGHT: f32 = 60.0;
@@ -5892,10 +5892,10 @@ impl Workspace {
                                     div()
                                         .debug_selector(move || format!("sidebar-section-{sidebar_index}"))
                                         .ml(px(if checkout_rows[row.project] { 30.0 } else { 20.0 }))
-                                        .mt(px(2.0))
-                                        .mb(px(2.0))
-                                        .text_size(px(9.0))
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .mt(px(8.0))
+                                        .mb(px(3.0))
+                                        .text_size(px(10.5))
+                                        .font_weight(gpui::FontWeight::MEDIUM)
                                         .text_color(Theme::global().TEXT_FAINT)
                                         .child(section),
                                 );
@@ -5913,7 +5913,7 @@ impl Workspace {
                             }
                             let selected =
                                 active_id.as_deref() == Some(session.session_id.as_str());
-                            let (icon, title) = sidebar_session_title_with_open_title(
+                            let (_icon, title) = sidebar_session_title_with_open_title(
                                 session,
                                 open_titles.get(&session.session_id).map(String::as_str),
                             );
@@ -5999,16 +5999,16 @@ impl Workspace {
                                     .mb(px(2.0))
                                     .relative()
                                     .px_2()
-                                    .py(px(2.0))
+                                    .py(px(3.0))
                                     .flex()
                                     .flex_col()
-                                    .gap(px(1.0))
-                                    .rounded_lg()
+                                    .gap(px(0.0))
+                                    .rounded(px(8.0))
                                     .cursor_pointer()
                                     .when(selected && folders, |el| el.child(folder_surface::measure(
                                         folder_frame.clone(), folder_surface::Region::SelectedTab,
                                     )))
-                                    .when(!folders, |el| el.mr_2().rounded_lg().bg(if selected {
+                                    .when(!folders, |el| el.mr_2().rounded(px(8.0)).bg(if selected {
                                         Theme::global().PANEL_BG
                                     } else {
                                         Theme::global().HEADER_BG
@@ -6052,19 +6052,31 @@ impl Workspace {
                                             .flex()
                                             .items_center()
                                             .gap_1()
-                                            .h(px(18.0))
+                                            .h(px(22.0))
                                             .child(
+                                                // Status dot: colour only carries state.
                                                 div()
-                                                    .w(px(16.0))
+                                                    .w(px(14.0))
                                                     .flex_none()
-                                                    .text_size(px(12.0))
-                                                    .child(icon),
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .debug_selector(move || format!("sidebar-session-dot-{sidebar_index}"))
+                                                    .child(
+                                                        div().size(px(6.0)).rounded_full().bg(if working {
+                                                            Theme::global().OK
+                                                        } else if is_open {
+                                                            Theme::global().TEXT_DIM
+                                                        } else {
+                                                            Theme::global().TEXT_FAINT
+                                                        }),
+                                                    ),
                                             )
                                             .child({
                                                 let container = div()
                                                     .flex_1()
                                                     .min_w_0()
-                                                    .max_h(px(18.0))
+                                                    .max_h(px(20.0))
                                                     .truncate()
                                                     .debug_selector(move || {
                                                         format!(
@@ -6072,7 +6084,8 @@ impl Workspace {
                                                         )
                                                         .into()
                                                     })
-                                                    .text_size(px(12.0))
+                                                    .text_size(px(13.0))
+                                                    .when(selected, |el| el.font_weight(gpui::FontWeight::MEDIUM))
                                                     .line_height(relative(1.5));
                                                 // A working session's title breathes in step
                                                 // with running tool rows. The pulse is its own
@@ -6204,12 +6217,13 @@ impl Workspace {
                                     .when(details.is_some() || edits.is_some() || todo_progress.is_some(), |row| {
                                         row.child(
                                             div()
-                                                .pl(px(20.0))
+                                                .pl(px(18.0))
+                                                .pb(px(2.0))
                                                 .flex()
                                                 .items_center()
                                                 .gap_2()
                                                 .min_w_0()
-                                                .text_size(px(9.0))
+                                                .text_size(px(10.5))
                                                 .text_color(Theme::global().TEXT_DIM)
                                                 .child(
                                                     div()
@@ -10493,7 +10507,7 @@ mod tests {
             cx.notify();
         });
         vcx.run_until_parked();
-        // At 12px with 1.5 line height, every title occupies 18px. Long
+        // At 13px with 1.5 line height, every title occupies 19.5px. Long
         // titles must truncate at that size, never shrink to fit the row.
         for selector in [
             "sidebar-session-title-0",
@@ -10501,7 +10515,7 @@ mod tests {
             "sidebar-session-title-2",
         ] {
             let title = vcx.debug_bounds(selector).unwrap();
-            assert_eq!(title.size.height, px(18.0));
+            assert_eq!(title.size.height, px(19.5));
         }
         let short = vcx.debug_bounds("sidebar-session-0").unwrap();
         for selector in ["sidebar-session-1", "sidebar-session-2"] {

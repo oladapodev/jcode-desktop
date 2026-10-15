@@ -121,6 +121,8 @@ impl Workspace {
             .px_2()
             .pt_1()
             .pb_2()
+            .border_t_1()
+            .border_color(theme.PANEL_BORDER)
             .flex()
             .flex_col()
             .gap_1()
@@ -132,20 +134,16 @@ impl Workspace {
                 div()
                     .id("sidebar-account")
                     .debug_selector(|| "sidebar-account".into())
-                    .h(px(40.0))
+                    .h(px(42.0))
                     .pl(px(8.0))
                     .pr_3()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .rounded_full()
+                    .gap(px(10.0))
+                    .rounded(px(10.0))
                     .cursor_pointer()
-                    .bg(if menu_open {
-                        theme.HEADER_BG
-                    } else {
-                        theme.INLINE_CODE_BG
-                    })
-                    .hover(|el| el.bg(theme.HEADER_BG))
+                    .when(menu_open, |el| el.bg(theme.PANEL_BG))
+                    .hover(|el| el.bg(theme.PANEL_BG))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {
@@ -176,7 +174,7 @@ impl Workspace {
                     .child(
                         div()
                             .debug_selector(|| "sidebar-account-avatar".into())
-                            .size(px(26.0))
+                            .size(px(28.0))
                             .flex_none()
                             .flex()
                             .items_center()
@@ -187,7 +185,8 @@ impl Workspace {
                             } else {
                                 theme.PANEL_BG
                             })
-                            .text_size(px(11.0))
+                            .text_size(px(12.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(ink)
                             .child(account.initial(show_email)),
                     )
@@ -201,8 +200,9 @@ impl Workspace {
                                 div()
                                     .debug_selector(|| "sidebar-account-name".into())
                                     .truncate()
-                                    .text_size(px(11.0))
-                                    .line_height(px(14.0))
+                                    .text_size(px(12.5))
+                                    .line_height(px(16.0))
+                                    .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(ink)
                                     .child(account.title(show_email)),
                             )
@@ -210,8 +210,8 @@ impl Workspace {
                                 div()
                                     .debug_selector(|| "sidebar-account-detail".into())
                                     .truncate()
-                                    .text_size(px(9.0))
-                                    .line_height(px(12.0))
+                                    .text_size(px(11.0))
+                                    .line_height(px(14.0))
                                     .text_color(theme.TEXT_DIM)
                                     .child(account.detail()),
                             ),

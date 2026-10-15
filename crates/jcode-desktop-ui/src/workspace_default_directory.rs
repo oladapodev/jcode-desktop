@@ -230,10 +230,10 @@ impl Workspace {
             .h(px(28.0))
             .flex()
             .items_center()
-            .rounded_md()
+            .rounded(px(7.0))
             .when(self.remotes.default_host.is_none(), |el| {
                 el.cursor_pointer()
-                    .hover(|el| el.bg(Theme::global().TOOL_BG))
+                    .hover(|el| el.bg(Theme::global().PANEL_BG))
             })
             .tooltip(move |_, cx| {
                 cx.new(|_| remotes::HeaderTooltip(tooltip.clone().into()))
@@ -252,8 +252,8 @@ impl Workspace {
                     .min_w_0()
                     // Small enough to fit typical full paths. Anything longer
                     // drops its start, since the leaf folder is what matters.
-                    .text_size(px(9.0))
-                    .text_color(Theme::global().ACCENT)
+                    .text_size(px(11.5))
+                    .text_color(Theme::global().TEXT_DIM)
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis_start()

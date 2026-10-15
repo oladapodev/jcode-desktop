@@ -59,6 +59,19 @@ fn visible_feedback() -> Option<(String, Tone)> {
         .flatten()
 }
 
+/// Whether the header should show the version pill at all.
+pub(super) fn needs_attention() -> bool {
+    if visible_feedback().is_some() {
+        return true;
+    }
+    let (_, action) = status_label(
+        &updates::release_status(),
+        &updates::current(),
+        updates::is_source_build(),
+    );
+    action.is_some() || updates::current().is_busy()
+}
+
 const CHAR_WIDTH: f32 = 5.4;
 
 /// Size the pill to its short version string, with room for an optional action
@@ -81,7 +94,7 @@ impl Workspace {
     /// Clicking the version pill: check for a newer release right away and
     /// ask the platform updater to check, download, or install whatever is
     /// next. The pill shows the check and its result.
-    fn check_and_apply_update() {
+    pub(super) fn check_and_apply_update() {
         updates::note_user_check();
         updates::check_release_now();
         // A source checkout only reports releases. Ctrl+R or /update rebuild it.
@@ -372,18 +385,13 @@ mod tests {
             vcx.run_until_parked();
         };
         draw(vcx);
-        let header = vcx
-            .debug_bounds("workspace-version")
-            .expect("version in header");
-        assert!(header.origin.y < px(100.));
-        assert_eq!(header.size.height, px(18.0));
-        assert!(header.size.width < px(132.0), "idle version stays compact");
-        let fps = vcx.debug_bounds("fps-counter").unwrap();
-        let build = vcx.debug_bounds("workspace-build").unwrap();
-        assert!(header.right() <= fps.left());
-        assert!(build.size.height <= px(16.0));
-        assert!(build.top() >= header.top() && build.bottom() <= header.bottom());
-        assert!(vcx.debug_bounds("workspace-version-status").is_none());
+        // Idle and current: the header carries only the quiet status chip.
+        assert!(
+            vcx.debug_bounds("workspace-version").is_none(),
+            "an up-to-date build keeps the version out of the header"
+        );
+        let status = vcx.debug_bounds("header-status").expect("status chip");
+        assert!(status.origin.y < px(100.));
         assert!(
             vcx.debug_bounds("panel-build").is_none(),
             "workspace footer must not duplicate version"
@@ -396,7 +404,13 @@ mod tests {
             updates::jcode_update_register_actions(check, check);
         }
         draw(vcx);
-        let header = vcx.debug_bounds("workspace-version").unwrap();
+        let header = vcx
+            .debug_bounds("workspace-version")
+            .expect("a new release shows the version pill");
+        assert!(header.origin.y < px(100.));
+        assert_eq!(header.size.height, px(18.0));
+        let status = vcx.debug_bounds("header-status").unwrap();
+        assert!(header.right() <= status.left());
         let button = vcx
             .debug_bounds("workspace-update-button")
             .expect("new release offers Update");
@@ -418,7 +432,7 @@ mod tests {
             vcx.debug_bounds("update-chip").is_none(),
             "workspace uses header, not bottom overlay"
         );
-        // Clicking the version text itself also checks for and applies updates.
+        // Clicking the status chip checks for and applies updates.
         updates::clear_test_actions();
         updates::set_release_status(ReleaseStatus::Current {
             latest: "1.0.0".into(),
@@ -427,21 +441,19 @@ mod tests {
             updates::jcode_update_register_actions(check, check);
         }
         draw(vcx);
-        let build = vcx.debug_bounds("workspace-build").unwrap();
-        let compact = vcx.debug_bounds("workspace-version").unwrap().size.width;
-        assert!(vcx.debug_bounds("workspace-version-check").is_none());
+        assert!(vcx.debug_bounds("workspace-version").is_none());
+        let status = vcx.debug_bounds("header-status").unwrap();
         let before = REQUESTS.load(Ordering::SeqCst);
-        vcx.simulate_click(build.center(), gpui::Modifiers::default());
+        vcx.simulate_click(status.center(), gpui::Modifiers::default());
         draw(vcx);
         assert_eq!(REQUESTS.load(Ordering::SeqCst), before + 1);
         assert_eq!(updates::current(), UpdateState::Checking);
         assert_eq!(updates::release_status(), ReleaseStatus::Checking);
-        // The click is visible: the pill grows to show the running check.
+        // The click is visible: the pill appears to show the running check.
         let check = vcx
             .debug_bounds("workspace-version-check")
             .expect("clicking shows the check in progress");
         let header = vcx.debug_bounds("workspace-version").unwrap();
-        assert!(header.size.width > compact);
         assert!(check.right() <= header.right());
         // Its result stays visible once the check settles.
         updates::set(UpdateState::Idle);

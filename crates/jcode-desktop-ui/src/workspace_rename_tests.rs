@@ -256,7 +256,7 @@ fn rename_button_stays_clickable_without_squeezing_compact_tabs(cx: &mut gpui::T
         vcx.run_until_parked();
         let button = vcx.debug_bounds("rename-session-button");
         let fps = vcx
-            .debug_bounds("fps-counter")
+            .debug_bounds("header-status")
             .or_else(|| vcx.debug_bounds("compact-sidebar-toggle"))
             .unwrap();
         let tabs = vcx.debug_bounds("live-session-tabs").unwrap();

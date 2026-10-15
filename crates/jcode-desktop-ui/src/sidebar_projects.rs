@@ -253,16 +253,17 @@ impl Workspace {
             .group(group)
             .relative()
             .mx_2()
-            .mb_1()
-            .pl_2()
+            .mt(px(6.0))
+            .mb(px(2.0))
+            .pl(px(8.0))
             .pr_1()
-            .h(px(24.0))
+            .h(px(28.0))
             .flex()
             .items_center()
-            .gap_1()
-            .rounded_full()
+            .gap(px(6.0))
+            .rounded(px(8.0))
             .cursor_pointer()
-            .hover(|el| el.bg(theme.TOOL_BG))
+            .hover(|el| el.bg(theme.PANEL_BG))
             .tooltip(move |_, cx| {
                 cx.new(|_| remotes::HeaderTooltip(tooltip.clone().into()))
                     .into()
@@ -278,11 +279,8 @@ impl Workspace {
             )
             .child(
                 div()
-                    .w(px(12.0))
                     .flex_none()
-                    .text_size(px(10.0))
-                    .text_color(theme.TEXT_DIM)
-                    .child(if collapsed { "›" } else { "⌄" }),
+                    .child(sidebar_worktrees::icon(sidebar_worktrees::FOLDER_ICON, 14.0)),
             )
             .child(
                 div()
@@ -290,9 +288,9 @@ impl Workspace {
                     .min_w_0()
                     .truncate()
                     .debug_selector(move || format!("sidebar-project-label-{index}"))
-                    .text_size(px(11.0))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(theme.TEXT_DIM)
+                    .text_size(px(12.5))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(theme.TEXT)
                     .child(project.label.clone()),
             )
             .children(branch.map(|branch| {
@@ -316,11 +314,11 @@ impl Workspace {
             .child(
                 div()
                     .flex_none()
-                    .w(px(16.0))
+                    .pr(px(4.0))
                     .text_right()
-                    .text_size(px(10.0))
-                    .text_color(theme.TEXT_DIM)
-                    .child(count.to_string()),
+                    .text_size(px(11.0))
+                    .text_color(theme.TEXT_FAINT)
+                    .child(if collapsed { format!("{count} ›") } else { count.to_string() }),
             )
             // Actions overlay the row end on hover instead of reserving width.
             .when(git || local.is_some(), |el| {

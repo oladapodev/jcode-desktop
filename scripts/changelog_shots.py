@@ -36,7 +36,7 @@ SHOTS = {
         # A zero-distance native drag clicks Show past sessions so the dock and
         # populated collections are visible without changing fixture defaults.
         (1, "project-sidebar", ["--collections", "--selection-drag", "80", "132", "80", "132"],
-         "224x1000+0+0", None),
+         "252x1000+0+0", None),
         (2, "connected-selection", ["--transcript", "all", "--selection-drag", "270", "276", "500", "548"],
          "1200x330+232+260", 1000),
         (3, "adaptive-responses", ["--transcript", "user-response-short"],

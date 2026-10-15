@@ -28,21 +28,35 @@ impl History {
 
 impl Workspace {
     pub(super) fn render_sidebar_history_toggle(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        div().px_3().py_1().child(
+        const HISTORY_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></g></svg>"#;
+        let showing = self.sidebar_history.show_all;
+        div().pl_2().pr(px(crate::scrollbar::GUTTER + 4.0)).pb_1().child(
             div()
                 .id("sidebar-history-toggle")
                 .debug_selector(|| "sidebar-history-toggle".into())
-                .rounded_full()
-                .px_3()
-                .py_1()
-                .text_size(px(11.0))
-                .text_color(Theme::global().TEXT_DIM)
-                .cursor_pointer()
-                .child(if self.sidebar_history.show_all {
-                    "Hide past sessions"
+                .h(px(30.0))
+                .px(px(10.0))
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .rounded(px(8.0))
+                .text_size(px(12.5))
+                .text_color(if showing {
+                    Theme::global().TEXT
                 } else {
-                    "Show past sessions"
+                    Theme::global().TEXT_DIM
                 })
+                .when(showing, |el| el.bg(Theme::global().PANEL_BG))
+                .hover(|el| el.bg(Theme::global().PANEL_BG).text_color(Theme::global().TEXT))
+                .cursor_pointer()
+                .child(
+                    gpui::svg()
+                        .data(HISTORY_ICON)
+                        .size(px(14.0))
+                        .flex_none()
+                        .text_color(Theme::global().TEXT_DIM),
+                )
+                .child(if showing { "Hide history" } else { "History" })
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(|this, _, window, cx| {

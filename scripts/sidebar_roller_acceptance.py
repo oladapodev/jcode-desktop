@@ -41,7 +41,7 @@ def verify(output, env, root):
         report["observations"].append({"stage": label, "navigation": state})
         assert identity(state) == baseline, ("Roller changed panels or keyboard focus", label, state)
 
-    # The section menu opens beside the 224px sidebar, over the canvas.
+    # The section menu opens beside the 252px sidebar, over the canvas.
     MENU = (228, 0, 448, 300)
 
     def words(image, label, header=False):
