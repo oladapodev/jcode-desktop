@@ -905,6 +905,15 @@ impl PromptInput {
         cx.notify();
     }
 
+    /// The composer's send button: same path as pressing Enter.
+    pub(crate) fn submit_from_button(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.submit_prompt(false, window, cx);
+    }
+
+    pub(crate) fn has_draft(&self) -> bool {
+        !self.content.trim().is_empty() || !self.attachments.is_empty()
+    }
+
     fn submit(&mut self, _: &Submit, window: &mut Window, cx: &mut Context<Self>) {
         self.submit_prompt(false, window, cx);
     }

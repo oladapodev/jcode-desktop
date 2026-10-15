@@ -9,9 +9,9 @@
 use super::*;
 
 /// Pill height.
-pub(super) const TAB_HEIGHT: f32 = 22.;
+pub(super) const TAB_HEIGHT: f32 = 28.;
 /// Gap between the input and the pill row below it.
-const PILL_GAP: f32 = 4.;
+const PILL_GAP: f32 = 0.;
 /// Distance from the input's right edge to the in-box voice button.
 const VOICE_INSET: f32 = 8.;
 /// Height of the soft ramp above the floating composer.
@@ -38,8 +38,8 @@ impl Panel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let _ = window;
         let theme = Theme::global();
+        let card_focused = self.input.read(cx).focus_handle.is_focused(window);
         let screenshot_mode = crate::config::display().screenshot_mode;
         let account_label = if screenshot_mode {
             "Account hidden".to_string()
@@ -129,7 +129,9 @@ impl Panel {
             .flex()
             .items_center()
             .gap_1()
-            .px_1()
+            .pl(px(6.0))
+            .pr(px(8.0))
+            .pb(px(8.0))
             .mt(px(PILL_GAP))
             .child(
                 div()
@@ -252,7 +254,8 @@ impl Panel {
                                     .child(detail)
                             }))
                     })),
-            );
+            )
+            .child(self.render_send_button(cx));
         let strips = self.render_composer_applets(window, cx);
         div()
             .debug_selector(|| "composer".into())
@@ -263,25 +266,42 @@ impl Panel {
             .children(strips)
             .children(self.render_provider_picker(window, cx))
             .child(
-                // The voice button floats inside the input's right edge. The
-                // input reserves matching trailing space for it.
+                // One card: the editor on top, its controls on a row below.
                 div()
-                    .relative()
+                    .debug_selector(|| "composer-card".into())
                     .w_full()
                     .min_w_0()
-                    .child(self.render_voice_input_slot(cx))
+                    .flex()
+                    .flex_col()
+                    .rounded(px(18.0))
+                    .bg(theme.INPUT_BG)
+                    .border_1()
+                    .border_color(if card_focused {
+                        theme.PANEL_BORDER_FOCUS
+                    } else {
+                        theme.INPUT_BORDER
+                    })
                     .child(
+                        // The voice button floats inside the input's right edge. The
+                        // input reserves matching trailing space for it.
                         div()
-                            .absolute()
-                            .top_0()
-                            .bottom_0()
-                            .right(px(VOICE_INSET))
-                            .flex()
-                            .items_center()
-                            .child(self.render_voice_tab(cx)),
-                    ),
+                            .relative()
+                            .w_full()
+                            .min_w_0()
+                            .child(self.render_voice_input_slot(cx))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .bottom_0()
+                                    .right(px(VOICE_INSET))
+                                    .flex()
+                                    .items_center()
+                                    .child(self.render_voice_tab(cx)),
+                            ),
+                    )
+                    .child(pills),
             )
-            .child(pills)
             .into_any_element()
     }
 
@@ -331,6 +351,9 @@ impl Panel {
                     .px_2()
                     .pb_2()
                     .bg(veil(DOCK_VEIL_ALPHA))
+                    .flex()
+                    .flex_col()
+                    .items_center()
                     .when(self.recovery_picker_open, |el| {
                         el.child(self.render_recovery_model_picker(cx))
                     })
@@ -339,6 +362,9 @@ impl Panel {
                     .child(
                         div()
                             .relative()
+                            .w_full()
+                            .min_w_0()
+                            .max_w(px(super::READING_COLUMN_WIDTH + 24.0))
                             .flex()
                             .flex_col()
                             .gap_2()
@@ -415,25 +441,84 @@ impl Panel {
     }
 }
 
-/// A compact rounded pill, filled like the transcript's user prompt cards.
+impl Panel {
+    /// Send, or stop while a turn runs and the draft is empty.
+    fn render_send_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        const SEND_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="black" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>"#;
+        const STOP_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5" fill="black"/></svg>"#;
+        let theme = Theme::global();
+        let has_draft = self.input.read(cx).has_draft();
+        let stop = !has_draft && self.can_stop_turn();
+        let enabled = stop || has_draft;
+        div()
+            .id("composer-send")
+            .debug_selector(|| "composer-send".into())
+            .flex_none()
+            .ml_1()
+            .size(px(30.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .bg(if stop {
+                theme.TEXT
+            } else if enabled {
+                theme.ACCENT
+            } else {
+                theme.TOOL_BG
+            })
+            .when(enabled, |el| el.cursor_pointer().hover(|el| el.opacity(0.88)))
+            .tooltip(move |_, cx| {
+                cx.new(|_| super::usage::MeterTooltip(if stop { "Stop  Esc" } else { "Send  Enter" }.into()))
+                    .into()
+            })
+            .child(
+                gpui::svg()
+                    .data(if stop { STOP_ICON } else { SEND_ICON })
+                    .size(px(if stop { 12.0 } else { 15.0 }))
+                    .text_color(if enabled { theme.BG } else { theme.TEXT_FAINT }),
+            )
+            .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
+                window.prevent_default();
+                cx.stop_propagation();
+            })
+            .on_click(cx.listener(move |this, _, window, cx| {
+                cx.stop_propagation();
+                if stop {
+                    this.stop_turn();
+                    cx.notify();
+                } else {
+                    // Submitting calls back into this panel, so run it after
+                    // this handler releases the panel.
+                    let input = this.input.clone();
+                    window.defer(cx, move |window, cx| {
+                        input.update(cx, |input, cx| input.submit_from_button(window, cx));
+                    });
+                }
+            }))
+            .into_any_element()
+    }
+}
+
+/// A compact rounded pill: flat text until hovered.
 pub(super) fn composer_pill(id: &'static str) -> gpui::Stateful<gpui::Div> {
     let theme = Theme::global();
     div()
         .id(id)
         .debug_selector(move || id.into())
         .h(px(TAB_HEIGHT))
-        .px_2p5()
+        .px(px(9.0))
         .flex()
         .items_center()
         .gap_1p5()
         .rounded_full()
-        .bg(theme.prompt_background(usize::MAX))
-        .text_size(px(10.5))
+        .text_size(px(12.0))
+        .font_weight(gpui::FontWeight::MEDIUM)
         .font_family(theme.FONT_UI)
         .text_color(theme.TEXT_DIM)
         .whitespace_nowrap()
         .cursor_pointer()
-        .hover(|el| el.text_color(theme.TEXT).bg(theme.USER_BG))
+        .hover(|el| el.text_color(theme.TEXT).bg(theme.TOOL_BG))
 }
 
 /// `claude-opus-4-8` reads `Opus 4.8`. The provider already appears in the
@@ -633,9 +718,10 @@ mod tests {
                     "location is below the input"
                 );
                 assert!(context.right() <= location.left(), "location sits right");
+                let send = vcx.debug_bounds("composer-send").unwrap();
                 assert!(
-                    input.right() - location.right() < px(12.),
-                    "location hugs the right edge at {width}: {location:?} {input:?}"
+                    location.right() <= send.left() && input.right() - send.right() < px(12.),
+                    "location sits before the send button at the right edge at {width}: {location:?} {send:?} {input:?}"
                 );
             }
         }

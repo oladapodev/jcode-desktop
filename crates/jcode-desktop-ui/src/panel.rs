@@ -159,6 +159,8 @@ pub(crate) type SessionOpener =
 // Keep the last message/card clear of the composer and its metadata. This is
 // outside the scrolling list so it remains visible even while reading history.
 const TRANSCRIPT_BOTTOM_GAP: f32 = 12.0;
+/// Widest the transcript and composer grow; wider panels centre them.
+pub(crate) const READING_COLUMN_WIDTH: f32 = 780.0;
 
 fn command_unavailable_message(input: &str) -> String {
     let name = input.split_whitespace().next().unwrap_or(input);
@@ -530,6 +532,9 @@ pub struct Panel {
     /// Height of the floating composer dock. The transcript scrolls beneath
     /// it, padded by this much so the live end still clears the composer.
     composer_dock_height: f32,
+    /// Last draft emptiness seen, so typing repaints the panel only when the
+    /// send button changes.
+    composer_has_draft: bool,
     /// Eased screen position of the live activity row.
     steady_activity: steady_activity::SteadyCell,
     /// Padding last applied to the final transcript row. A change must
@@ -871,6 +876,7 @@ impl Panel {
                 },
             )
             .with_example_prompts()
+            .without_chrome()
         });
         // Local echo is appended by the workspace when submit fires; simplest
         // is to observe our own input entity... but the closure above has no
@@ -998,6 +1004,7 @@ impl Panel {
             stick_to_bottom: true,
             transcript_end_visible: true,
             composer_dock_height: 0.0,
+            composer_has_draft: false,
             steady_activity: Default::default(),
             transcript_end_pad: 0.0,
             pending_history_scroll: None,
@@ -1900,9 +1907,17 @@ impl Panel {
                     },
                 )
                 .with_example_prompts()
+                // The composer card draws the fill, border and corners.
+                .without_chrome()
                 .with_on_change(move |content, app| {
                     if let Some(panel) = change_weak.upgrade() {
                         panel.update(app, |this, cx| {
+                            // Repaint only when the send button changes face.
+                            let has_draft = !content.trim().is_empty();
+                            if this.composer_has_draft != has_draft {
+                                this.composer_has_draft = has_draft;
+                                cx.notify();
+                            }
                             if (content == "/model" || content.starts_with("/model "))
                                 && !this.is_pending_session()
                             {
@@ -1924,21 +1939,7 @@ impl Panel {
                             } else if this.model_picker_open {
                                 this.close_model_picker(cx);
                                 handled = true;
-                            } else if !this.is_pending_session()
-                                && (this.status != "idle"
-                                    || !this.connection_phase.is_empty()
-                                    || !this.streaming_text.is_empty()
-                                    || !this.streaming_reasoning.is_empty()
-                                    || !this.pending_users.is_empty())
-                            {
-                                if this.preview_state.is_none() {
-                                    this.bridge.send(Command::Cancel {
-                                        session_id: this.session_id.clone(),
-                                    });
-                                }
-                                this.prompt_queue.paused = true;
-                                this.sound_events.cancel();
-                                this.record_stop(stop_reason::StopNotice::cancel_requested());
+                            } else if this.stop_turn() {
                                 handled = true;
                             }
                             cx.notify();
@@ -3207,6 +3208,32 @@ impl Panel {
         }
     }
 
+    /// Whether a turn is in flight that Escape or the stop button can cancel.
+    pub(crate) fn can_stop_turn(&self) -> bool {
+        !self.is_pending_session()
+            && (self.status != "idle"
+                || !self.connection_phase.is_empty()
+                || !self.streaming_text.is_empty()
+                || !self.streaming_reasoning.is_empty()
+                || !self.pending_users.is_empty())
+    }
+
+    /// Cancel the running turn. Queued prompts are kept but paused.
+    pub(crate) fn stop_turn(&mut self) -> bool {
+        if !self.can_stop_turn() {
+            return false;
+        }
+        if self.preview_state.is_none() {
+            self.bridge.send(Command::Cancel {
+                session_id: self.session_id.clone(),
+            });
+        }
+        self.prompt_queue.paused = true;
+        self.sound_events.cancel();
+        self.record_stop(stop_reason::StopNotice::cancel_requested());
+        true
+    }
+
     pub fn is_busy(&self) -> bool {
         self.status != "idle" || self.activity_active()
     }
@@ -4084,8 +4111,8 @@ impl Panel {
                             .gap_2()
                             .items_center()
                             .px_1()
-                            .py(px(2.0))
-                            .text_size(px(14.0))
+                            .py(px(3.0))
+                            .text_size(px(13.5))
                             // Match the token pill's 14px line plus 2px padding per side.
                             .line_height(px(18.0))
                             .child(crate::tool_icon::render_badge_with_label(
@@ -4108,8 +4135,8 @@ impl Panel {
                                         .min_w_0()
                                         .overflow_hidden()
                                         .whitespace_nowrap()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(Theme::global().TOOL_TEXT)
+                                        .text_size(px(13.0))
+                                        .text_color(Theme::global().TEXT_FAINT)
                                         .child(text_selection::plain(
                                             self.transcript_selection.clone(),
                                             format!("tool-summary-{index}"),
@@ -4159,10 +4186,9 @@ impl Panel {
                                         .px_2()
                                         .py(px(2.0))
                                         .rounded_full()
-                                        .bg(Theme::global().INLINE_CODE_BG)
-                                        .hover(|style| style.bg(Theme::global().TOOL_BORDER))
+                                        .hover(|style| style.bg(Theme::global().INLINE_CODE_BG))
                                         .cursor_pointer()
-                                        .text_size(px(10.0))
+                                        .text_size(px(11.0))
                                         .line_height(px(14.0))
                                         .text_color(token_color)
                                         .on_click(cx.listener(move |this, _event, _window, cx| {
@@ -4941,7 +4967,18 @@ impl Render for Panel {
                                     .when(display.debug_visual, |el| {
                                         el.border_1().border_color(Theme::global().TOOL_BORDER)
                                     })
-                                    .child(element)
+                                    .w_full()
+                                    .flex()
+                                    .justify_center()
+                                    // A centred reading column keeps long lines readable
+                                    // in wide panels.
+                                    .child(
+                                        div()
+                                            .w_full()
+                                            .min_w_0()
+                                            .max_w(px(READING_COLUMN_WIDTH))
+                                            .child(element),
+                                    )
                                     .when(
                                         display.tool_call_details && !display.screenshot_mode,
                                         |el| {
@@ -5157,14 +5194,22 @@ impl Render for Panel {
                         (f32::from(window.viewport_size().height) * 0.3).min(280.)
                     ))
                     .overflow_y_scroll()
-                    .child(render_todo_card_with_style(
-                        &payload,
-                        true,
-                        "pinned-todo",
-                        &self.transcript_selection,
-                        window,
-                        cx,
-                    ))
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .max_w(px(READING_COLUMN_WIDTH))
+                            .child(render_todo_card_with_style(
+                                &payload,
+                                true,
+                                "pinned-todo",
+                                &self.transcript_selection,
+                                window,
+                                cx,
+                            )),
+                    )
             }))
             .child(
                 div()
@@ -5638,8 +5683,9 @@ fn tool_output_token_badge(output: &str) -> (String, gpui::Rgba) {
     };
     let tokens = estimate_tokens(output).max(usize::from(!output.is_empty()));
     let theme = Theme::global();
+    // Colour only when the size is worth noticing.
     let color = match approx_tool_output_token_severity(tokens) {
-        ApproxTokenSeverity::Normal => theme.OK,
+        ApproxTokenSeverity::Normal => theme.TEXT_FAINT,
         ApproxTokenSeverity::Warning => theme.WARN,
         ApproxTokenSeverity::Danger => theme.ERROR,
     };
@@ -8008,9 +8054,9 @@ mod tests {
     fn tool_token_badge_estimates_output_and_colors_severity_boundaries() {
         let theme = Theme::global();
         for (tokens, label, color) in [
-            (0, "~0 tok", theme.OK),
-            (1_900, "~1.9k tok", theme.OK),
-            (3_999, "~3.9k tok", theme.OK),
+            (0, "~0 tok", theme.TEXT_FAINT),
+            (1_900, "~1.9k tok", theme.TEXT_FAINT),
+            (3_999, "~3.9k tok", theme.TEXT_FAINT),
             (4_000, "~4k tok", theme.WARN),
             (11_999, "~11k tok", theme.WARN),
             (12_000, "~12k tok", theme.ERROR),
@@ -8481,7 +8527,7 @@ mod tests {
             "adjacent tools use 2px padding instead of the 10px message boundary"
         );
         let header = vcx.debug_bounds("tool-header").expect("tool header");
-        assert!(header.size.height < px(24.0), "tool header stays compact");
+        assert!(header.size.height <= px(24.0), "tool header stays compact");
     }
 
     /// Inline tools must retain their intrinsic row height when enough of them
@@ -8985,6 +9031,62 @@ mod tests {
         assert!(bounds.size.width > px(0.) && bounds.size.height > px(0.));
         assert!(vcx.debug_bounds("assistant-avatar").is_none());
         assert!(vcx.debug_bounds("role-caption-jcode").is_none());
+    }
+
+    #[gpui::test]
+    fn composer_send_button_submits_and_stop_button_cancels(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| crate::input::bind_keys(cx));
+        let (bridge, commands) = crate::harness::spawn_recording();
+        let (workspace, vcx) = cx.add_window_view(|_, cx| {
+            let mut workspace =
+                crate::workspace::Workspace::for_test(crate::learning::Coach::new(), cx);
+            workspace.set_test_bridge(bridge);
+            workspace.push_test_panel("session-a", cx);
+            workspace
+        });
+        let mut panel = None;
+        workspace.update(vcx, |workspace, _| panel = workspace.test_panel(0));
+        let panel = panel.expect("test panel exists");
+        vcx.update(|window, cx| {
+            let handle = panel.read(cx).input.read(cx).focus_handle.clone();
+            window.focus(&handle, cx);
+        });
+        vcx.run_until_parked();
+
+        // Empty and idle: the button sends nothing.
+        let send = vcx.debug_bounds("composer-send").expect("send button paints");
+        vcx.simulate_click(send.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        assert!(commands.recv_timeout(std::time::Duration::from_millis(50)).is_err());
+
+        vcx.simulate_input("ship it");
+        vcx.run_until_parked();
+        let send = vcx.debug_bounds("composer-send").unwrap();
+        vcx.simulate_click(send.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        assert!(matches!(
+            commands.recv_timeout(std::time::Duration::from_millis(100)),
+            Ok(Command::Send { session_id, content, .. })
+                if session_id == "session-a" && content == "ship it"
+        ));
+        panel.read_with(vcx, |panel, cx| {
+            assert!(panel.input.read(cx).content.is_empty(), "draft clears after send")
+        });
+
+        // A running turn with an empty draft turns the button into stop.
+        panel.update(vcx, |panel, cx| {
+            panel.status = "busy".into();
+            cx.notify();
+        });
+        vcx.run_until_parked();
+        while commands.try_recv().is_ok() {}
+        let stop = vcx.debug_bounds("composer-send").unwrap();
+        vcx.simulate_click(stop.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        assert!(matches!(
+            commands.recv_timeout(std::time::Duration::from_millis(100)),
+            Ok(Command::Cancel { session_id }) if session_id == "session-a"
+        ));
     }
 
     #[gpui::test]

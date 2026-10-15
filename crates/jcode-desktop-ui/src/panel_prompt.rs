@@ -378,7 +378,19 @@ impl Panel {
                 .occlude()
                 .px_3()
                 .text_size(px(13.5))
-                .child(self.render_user_prompt(index, text, true, window, cx))
+                .child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .child(
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .max_w(px(super::READING_COLUMN_WIDTH))
+                                .child(self.render_user_prompt(index, text, true, window, cx)),
+                        ),
+                )
                 .map(|prompt| {
                     let transparent = gpui::Rgba {
                         a: 0.,
