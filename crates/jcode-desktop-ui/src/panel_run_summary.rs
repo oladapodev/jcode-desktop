@@ -14,6 +14,10 @@ const MIN_RUN: usize = 2;
 /// Most distinct glyphs stacked in front of the label.
 const MAX_ICONS: usize = 4;
 
+/// Diameter of each stacked glyph disc, and the offset between discs.
+const ICON_DISC: f32 = 20.;
+const ICON_STEP: f32 = 15.;
+
 const CHEVRON_RIGHT: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 18 6-6-6-6\"/></svg>";
 const CHEVRON_DOWN: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m6 9 6 6 6-6\"/></svg>";
 
@@ -270,25 +274,31 @@ impl Panel {
         let group: SharedString = format!("tool-run-{index}").into();
         let id = run.id.clone();
         let expanded = run.expanded;
-        let icons = div().flex().flex_row().flex_none().items_center().children(
-            distinct_icons(&run.names)
-                .into_iter()
-                .enumerate()
-                .map(|(position, name)| {
-                    div()
-                        .size(px(20.))
-                        .flex_none()
-                        .rounded_full()
-                        .bg(theme.TOOL_BG)
-                        .border_2()
-                        .border_color(ring)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .when(position > 0, |el| el.ml(px(-5.)))
-                        .child(crate::tool_icon::render_sized(name, 11., theme.TEXT_DIM))
-                }),
-        );
+        // Discs overlap by a few pixels. Place them absolutely inside a
+        // stack of explicit width so the label always starts after them.
+        let glyphs = distinct_icons(&run.names);
+        let stack_width = ICON_DISC + ICON_STEP * glyphs.len().saturating_sub(1) as f32;
+        let icons = div()
+            .debug_selector(|| "tool-run-icons".into())
+            .relative()
+            .flex_none()
+            .w(px(stack_width))
+            .h(px(ICON_DISC))
+            .children(glyphs.into_iter().enumerate().map(|(position, name)| {
+                div()
+                    .absolute()
+                    .top_0()
+                    .left(px(ICON_STEP * position as f32))
+                    .size(px(ICON_DISC))
+                    .rounded_full()
+                    .bg(theme.USER_BG)
+                    .border_2()
+                    .border_color(ring)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(crate::tool_icon::render_sized(name, 11., theme.TEXT_DIM))
+            }));
         let label = summary_label(&run.names);
         div().flex().flex_row().child(
             div()
@@ -501,6 +511,17 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].id, "a");
         assert_eq!(summary_label(&runs[0].names), "Read 2 files, ran 1 command");
+    }
+
+    #[gpui::test]
+    fn stacked_icons_sit_before_the_label(cx: &mut gpui::TestAppContext) {
+        let (panel, vcx) = mount(cx);
+        set(&panel, vcx, |panel| *panel.items = turn());
+        let icons = vcx.debug_bounds("tool-run-icons").expect("icon stack");
+        let label = vcx.debug_bounds("tool-run-label").expect("label");
+        // Read and bash: two discs, one step apart.
+        assert_eq!(icons.size.width, px(ICON_DISC + ICON_STEP));
+        assert!(label.left() >= icons.right(), "{icons:?} {label:?}");
     }
 
     #[gpui::test]
