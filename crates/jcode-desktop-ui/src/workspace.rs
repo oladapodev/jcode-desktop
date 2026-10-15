@@ -38,6 +38,8 @@ mod changelog_panel;
 
 #[path = "workspace_publish.rs"]
 mod publish_panel;
+#[path = "workspace_files_fixture.rs"]
+mod files_fixture;
 
 #[path = "workspace_responsive.rs"]
 mod responsive;
@@ -66,6 +68,8 @@ mod sidebar_selection;
 mod sidebar_swarm;
 #[path = "sidebar_worktrees.rs"]
 mod sidebar_worktrees;
+#[path = "workspace_settings_rows.rs"]
+mod settings_rows;
 #[path = "workspace_stream_fixture.rs"]
 mod workspace_stream_fixture;
 
@@ -1328,6 +1332,39 @@ impl Workspace {
                 workspace.active = panel_count / 2;
             }
             workspace.focus_pending = true;
+            // Offline fixtures for the overview, minimap and Machines surfaces.
+            // Opened after the harness's launch Escape so it cannot dismiss them.
+            if std::env::var_os("JCODE_DESKTOP_SCREENSHOT_MINIMAP").is_some() {
+                workspace.show_minimap = true;
+            }
+            if let Ok(view) = std::env::var("JCODE_DESKTOP_SCREENSHOT_VIEW") {
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(Duration::from_millis(3200)).await;
+                    let _ = this.update(cx, |w, cx| {
+                        match view.as_str() {
+                            "overview" => {
+                                w.overview = true;
+                                w.overview_progress.set(1.0, Instant::now());
+                            }
+                            "machines" => {
+                                w.remotes.hosts = vec![
+                                    remotes::MANAGED_CLOUD_HOST.into(),
+                                    "gcp-home".into(),
+                                    "builder@lab".into(),
+                                ];
+                                w.show_machines(cx);
+                            }
+                            _ => {}
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+            // Offline fixture: start collapsed, as after Ctrl+B.
+            if std::env::var("JCODE_DESKTOP_SCREENSHOT_HIDE_SIDEBAR").as_deref() == Ok("1") {
+                workspace.show_sidebar = false;
+            }
             if workspace_stream_fixture::enabled() {
                 workspace._stream_fixture = Some(workspace_stream_fixture::spawn(
                     "screenshot-fixture".into(),
@@ -1342,6 +1379,9 @@ impl Workspace {
                 let bridge = workspace.bridge.clone();
                 let panel = cx.new(|cx| Panel::new_accounts(&session, None, bridge, cx));
                 workspace.slots[0].panel = panel;
+            }
+            if std::env::var("JCODE_DESKTOP_SCREENSHOT_FILES").as_deref() == Ok("1") {
+                workspace.open_files_fixture(cx);
             }
             if std::env::var("JCODE_DESKTOP_SCREENSHOT_HISTORY").as_deref() == Ok("1") {
                 for index in 0..80 {
@@ -1366,6 +1406,12 @@ impl Workspace {
             {
                 workspace.sidebar_view = SidebarView::Learn;
                 workspace.tutorial_page = stage - 1;
+            }
+            match std::env::var("JCODE_DESKTOP_SCREENSHOT_SIDEBAR_VIEW").as_deref() {
+                Ok("settings") => workspace.sidebar_view = SidebarView::Settings,
+                Ok("theme") => workspace.sidebar_view = SidebarView::Theme,
+                Ok("accounts") => workspace.sidebar_view = SidebarView::Accounts,
+                _ => {}
             }
         } else {
             workspace.open_startup_draft(cx);
@@ -4981,51 +5027,123 @@ impl Workspace {
     }
 
     fn render_overview(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let mut grid = div()
-            .flex()
-            .flex_row()
-            .flex_wrap()
-            .gap_4()
-            .p_8()
-            .justify_center()
-            .items_center()
-            .content_center()
-            .size_full();
-
+        let theme = Theme::global();
+        // Swarm agents per coordinator, so a lead's card can show its team.
+        let swarm = sidebar_swarm::groups(&self.sessions);
+        let mut working_count = 0usize;
+        let mut cards = Vec::new();
         for (index, slot) in self.slots.iter().enumerate() {
             let panel = slot.panel.read(cx);
             let focused = index == self.active;
             let title = panel.title.clone();
-            let status = panel.status.clone();
-            let busy = panel.is_busy();
-            let preview: String = panel
-                .items
-                .iter()
-                .rev()
-                .find_map(|item| match item {
-                    crate::panel::Item::Assistant(text) | crate::panel::Item::User(text) => {
-                        Some(text.chars().take(220).collect())
+            let state = panel.minimap_state();
+            let todo = panel
+                .latest_todo_progress()
+                .filter(|(_, total)| *total > 0);
+            let (dot, word) = match state {
+                crate::panel::MinimapSessionState::Streaming => (theme.ACCENT, "Working"),
+                crate::panel::MinimapSessionState::Working => (theme.ACCENT, "Working"),
+                crate::panel::MinimapSessionState::Complete => (theme.OK, "Done"),
+                crate::panel::MinimapSessionState::Error => (theme.ERROR, "Failed"),
+                crate::panel::MinimapSessionState::Idle => (theme.TEXT_FAINT, "Idle"),
+            };
+            let live = matches!(
+                state,
+                crate::panel::MinimapSessionState::Streaming
+                    | crate::panel::MinimapSessionState::Working
+            );
+            working_count += usize::from(live);
+            let activity = overview_activity(&panel.items);
+            let model = panel
+                .model
+                .as_deref()
+                .map(str::trim)
+                .filter(|model| !model.is_empty())
+                .map(|model| {
+                    let pretty = jcode_provider_core::model_names::pretty_model_display_name(model);
+                    match pretty.strip_prefix("Claude ") {
+                        Some(rest) if !rest.trim().is_empty() => rest.to_string(),
+                        _ => pretty,
                     }
-                    _ => None,
+                });
+            let place = match panel.session_id.strip_prefix("ssh://") {
+                Some(rest) => rest.split('/').next().map(str::to_owned),
+                None => panel
+                    .working_dir
+                    .as_deref()
+                    .map(|dir| dir.trim_end_matches(['/', '\\']))
+                    .and_then(|dir| dir.rsplit(['/', '\\']).next())
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned),
+            };
+            let members = swarm
+                .children
+                .get(&panel.session_id)
+                .map(|children| {
+                    children
+                        .iter()
+                        .map(|child| sidebar_swarm::Member::of(&child.session))
+                        .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
 
-            grid = grid.child(
+            let mut meta = div()
+                .flex()
+                .items_center()
+                .gap(px(12.0))
+                .text_size(px(11.0))
+                .text_color(theme.TEXT_FAINT)
+                .overflow_hidden()
+                .whitespace_nowrap();
+            if let Some(model) = model {
+                meta = meta.child(div().flex_none().child(model));
+            }
+            if let Some(place) = place {
+                meta = meta.child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .child(place),
+                );
+            }
+            if !members.is_empty() {
+                let count = members.len();
+                let summary = sidebar_swarm::summary_state(&members);
+                meta = meta.child(
+                    div()
+                        .ml_auto()
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap(px(5.0))
+                        .child(sidebar_swarm::dot(summary, 6.0))
+                        .child(format!("{count} agent{}", if count == 1 { "" } else { "s" })),
+                );
+            }
+
+            cards.push(
                 div()
                     .id(("overview-panel", index))
                     .w(px(300.0))
-                    .h(px(190.0))
+                    .h(px(148.0))
+                    .px(px(16.0))
+                    .py(px(14.0))
                     .flex()
                     .flex_col()
-                    .bg(if focused {
-                        Theme::global().PANEL_BG
+                    .gap(px(8.0))
+                    .font_family(theme.FONT_UI)
+                    .rounded(px(14.0))
+                    .bg(if focused { theme.HEADER_BG } else { theme.PANEL_BG })
+                    .border_1()
+                    .border_color(if focused {
+                        theme.ACCENT.opacity(0.55)
                     } else {
-                        Theme::global().HEADER_BG
+                        gpui::transparent_black().into()
                     })
-                    .rounded_xl()
                     .overflow_hidden()
                     .cursor_pointer()
-                    .hover(|el| el.bg(Theme::global().TOOL_BG))
+                    .hover(|el| el.bg(theme.HEADER_BG))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |this, _event, window, cx| {
@@ -5039,64 +5157,92 @@ impl Workspace {
                     .child(
                         div()
                             .flex()
-                            .flex_row()
                             .items_center()
-                            .gap_2()
-                            .px_3()
-                            .py_2()
-                            .bg(Theme::global().HEADER_BG)
-                            .child(div().size(px(7.0)).rounded_full().bg(if busy {
-                                Theme::global().WARN
-                            } else {
-                                Theme::global().OK
-                            }))
+                            .gap(px(10.0))
+                            .child(div().flex_none().size(px(8.0)).rounded_full().bg(dot))
                             .child(
                                 div()
                                     .flex_1()
-                                    .text_size(px(12.0))
-                                    .text_color(Theme::global().TEXT)
+                                    .min_w_0()
                                     .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_ellipsis()
+                                    .text_size(px(14.0))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(theme.TEXT)
                                     .child(title),
                             )
                             .child(
                                 div()
-                                    .text_size(px(10.0))
-                                    .text_color(Theme::global().TEXT_DIM)
-                                    .child(status),
+                                    .flex_none()
+                                    .text_size(px(11.0))
+                                    .text_color(if live { theme.ACCENT } else { theme.TEXT_FAINT })
+                                    .child(word),
                             ),
                     )
                     .child(
                         div()
                             .flex_1()
-                            .p_3()
-                            .text_size(px(11.0))
-                            .text_color(Theme::global().TEXT_DIM)
+                            .min_h_0()
+                            .pl(px(18.0))
+                            .text_size(px(12.5))
+                            .line_height(relative(1.45))
+                            .text_color(theme.TEXT_DIM)
                             .overflow_hidden()
-                            .line_height(relative(1.4))
-                            .child(preview),
-                    ),
+                            .line_clamp(2)
+                            .child(activity),
+                    )
+                    .children(todo.map(|(done, total)| {
+                        let fraction = (done as f32 / total as f32).clamp(0.0, 1.0);
+                        div()
+                            .ml(px(18.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .h(px(3.0))
+                                    .rounded_full()
+                                    .bg(theme.USER_BG)
+                                    .child(
+                                        div()
+                                            .h_full()
+                                            .w(relative(fraction))
+                                            .rounded_full()
+                                            .bg(if done == total { theme.OK } else { theme.ACCENT }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_size(px(10.5))
+                                    .text_color(theme.TEXT_FAINT)
+                                    .child(format!("{done}/{total}")),
+                            )
+                    }))
+                    .child(meta.pl(px(18.0)))
+                    .into_any_element(),
             );
         }
 
         // New session card.
-        grid = grid.child(
+        cards.push(
             div()
                 .id("overview-new")
                 .w(px(300.0))
-                .h(px(190.0))
+                .h(px(148.0))
                 .flex()
                 .items_center()
                 .justify_center()
-                .border_2()
-                .border_dashed()
-                .border_color(Theme::global().PANEL_BORDER)
-                .rounded_xl()
+                .gap(px(8.0))
+                .rounded(px(14.0))
+                .font_family(theme.FONT_UI)
+                .text_size(px(13.0))
+                .bg(theme.PANEL_BG.opacity(0.45))
                 .cursor_pointer()
-                .text_color(Theme::global().TEXT_DIM)
-                .hover(|el| {
-                    el.border_color(Theme::global().ACCENT)
-                        .text_color(Theme::global().ACCENT)
-                })
+                .text_color(theme.TEXT_FAINT)
+                .hover(|el| el.bg(theme.PANEL_BG).text_color(theme.TEXT))
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(|this, _event, _window, cx| {
@@ -5107,15 +5253,62 @@ impl Workspace {
                         cx.notify();
                     }),
                 )
-                .child("+ new session"),
+                .child(div().text_size(px(16.0)).child("+"))
+                .child("New session")
+                .into_any_element(),
         );
 
+        let sessions = self.slots.len();
         div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .child(grid)
+            .font_family(theme.FONT_UI)
+            .child(
+                div()
+                    .max_w(px(960.0))
+                    .p_8()
+                    .flex()
+                    .flex_col()
+                    .gap(px(16.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .gap(px(10.0))
+                            .child(
+                                div()
+                                    .text_size(px(17.0))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(theme.TEXT)
+                                    .child("Overview"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.5))
+                                    .text_color(theme.TEXT_FAINT)
+                                    .child(match working_count {
+                                        0 => format!(
+                                            "{sessions} session{}",
+                                            if sessions == 1 { "" } else { "s" }
+                                        ),
+                                        working => format!(
+                                            "{sessions} session{}, {working} working",
+                                            if sessions == 1 { "" } else { "s" }
+                                        ),
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .flex_wrap()
+                            .gap(px(12.0))
+                            .children(cards),
+                    ),
+            )
             .into_any_element()
     }
 
@@ -5139,8 +5332,15 @@ impl Workspace {
         &self,
         directory: &Path,
         depth: usize,
+        open_file: Option<&Path>,
         cx: &mut Context<Self>,
     ) -> Vec<gpui::AnyElement> {
+        // Lucide-style outlines, tinted by `text_color` at the call site.
+        const FILE_TREE_CHEVRON_RIGHT: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>"#;
+        const FILE_TREE_CHEVRON_DOWN: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
+        const FILE_TREE_FOLDER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>"#;
+        const FILE_TREE_FOLDER_OPEN: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>"#;
+        const FILE_TREE_FILE: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>"#;
         let Ok(read_dir) = std::fs::read_dir(directory) else {
             return Vec::new();
         };
@@ -5160,6 +5360,15 @@ impl Workspace {
             let expanded = is_dir && self.expanded_directories.contains(&path);
             let row_path = path.clone();
             let label = entry.file_name().to_string_lossy().into_owned();
+            let selected = !is_dir && open_file == Some(path.as_path());
+            let theme = Theme::global();
+            let icon = |bytes: &'static [u8], size: f32| {
+                gpui::svg()
+                    .data(bytes)
+                    .size(px(size))
+                    .flex_none()
+                    .text_color(theme.TEXT_DIM)
+            };
             rows.push(
                 div()
                     .id(gpui::SharedString::from(format!(
@@ -5167,15 +5376,23 @@ impl Workspace {
                         path.display()
                     )))
                     .debug_selector(move || format!("file-tree-{label}").into())
-                    .pl(px(10.0 + depth as f32 * 14.0))
-                    .pr_2()
-                    .py_1()
+                    .mx(px(6.0))
+                    .h(px(28.0))
+                    .flex_none()
+                    .pl(px(6.0 + depth as f32 * 14.0))
+                    .pr(px(8.0))
                     .flex()
                     .items_center()
-                    .gap_1p5()
+                    .gap(px(6.0))
+                    .rounded(px(8.0))
                     .cursor_pointer()
-                    .text_size(px(11.0))
-                    .hover(|el| el.bg(Theme::global().HEADER_BG))
+                    .font_family(theme.FONT_UI)
+                    .text_size(px(12.5))
+                    .text_color(if selected { theme.TEXT } else { theme.TEXT_DIM })
+                    .when(selected, |el| el.bg(theme.PANEL_BG))
+                    .when(!selected, |el| {
+                        el.hover(move |el| el.bg(theme.PANEL_BG).text_color(theme.TEXT))
+                    })
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |this, _event, window, cx| {
@@ -5191,17 +5408,33 @@ impl Workspace {
                     )
                     .child(
                         div()
-                            .w(px(12.0))
+                            .size(px(12.0))
                             .flex_none()
-                            .text_color(Theme::global().TEXT_DIM)
-                            .child(if is_dir {
-                                if expanded { "▾" } else { "▸" }
-                            } else {
-                                "·"
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .when(is_dir, |el| {
+                                el.child(icon(
+                                    if expanded {
+                                        FILE_TREE_CHEVRON_DOWN
+                                    } else {
+                                        FILE_TREE_CHEVRON_RIGHT
+                                    },
+                                    12.0,
+                                ))
                             }),
                     )
+                    .child(icon(
+                        match (is_dir, expanded) {
+                            (true, true) => FILE_TREE_FOLDER_OPEN,
+                            (true, false) => FILE_TREE_FOLDER,
+                            _ => FILE_TREE_FILE,
+                        },
+                        14.0,
+                    ))
                     .child(
                         div()
+                            .min_w_0()
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
@@ -5210,7 +5443,7 @@ impl Workspace {
                     .into_any_element(),
             );
             if expanded {
-                rows.extend(self.render_file_entries(&path, depth + 1, cx));
+                rows.extend(self.render_file_entries(&path, depth + 1, open_file, cx));
             }
         }
         rows
@@ -5303,11 +5536,24 @@ impl Workspace {
             .get(self.active)
             .is_some_and(|slot| slot.panel.read(cx).session_id.starts_with("ssh://"))
         {
-            return div().debug_selector(|| "remote-file-browser-notice".into()).p_3().text_size(px(11.0)).text_color(Theme::global().TEXT_DIM)
+            return div().debug_selector(|| "remote-file-browser-notice".into()).px_4().py_3().font_family(Theme::global().FONT_UI).text_size(px(12.5)).text_color(Theme::global().TEXT_DIM)
                 .child("This panel runs on a remote machine. Ask Jcode to inspect its files in chat. The local file browser is available on local panels.")
                 .into_any_element();
         }
         let root = self.file_browser_root(cx);
+        let open_file = self.slots.get(self.active).and_then(|slot| {
+            slot.panel
+                .read(cx)
+                .session_id
+                .strip_prefix("file://")
+                .map(PathBuf::from)
+        });
+        let theme = Theme::global();
+        let root_label = root
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| root.display().to_string());
+        let root_path = root.display().to_string();
         div()
             .id("sidebar-file-list")
             .debug_selector(|| "sidebar-file-list".into())
@@ -5315,19 +5561,28 @@ impl Workspace {
             .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.sidebar_scroll)
+            .pb_3()
             .child(
                 div()
-                    .px_3()
-                    .py_2()
-                    .font_family(Theme::global().FONT_UI)
-                    .text_size(px(10.0))
-                    .text_color(Theme::global().TEXT_DIM)
+                    .id("sidebar-file-root")
+                    .h(px(32.0))
+                    .px(px(12.0))
+                    .flex()
+                    .items_center()
+                    .font_family(theme.FONT_UI)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_size(px(12.0))
+                    .text_color(theme.TEXT_FAINT)
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .child(root.display().to_string()),
+                    .tooltip(move |_, cx| {
+                        cx.new(|_| remotes::HeaderTooltip(root_path.clone().into()))
+                            .into()
+                    })
+                    .child(root_label),
             )
-            .children(self.render_file_entries(&root, 0, cx))
+            .children(self.render_file_entries(&root, 0, open_file.as_deref(), cx))
             .into_any_element()
     }
 
@@ -5480,6 +5735,7 @@ impl Workspace {
         // nests under its coordinator while it shares that checkout, and
         // surfaces under its own branch when it works in a separate worktree.
         let mut agents: HashMap<String, (usize, usize)> = HashMap::new();
+        let mut swarm_members: HashMap<String, Vec<sidebar_swarm::Member>> = HashMap::new();
         let mut nested = HashSet::new();
         for (root, children) in &swarm.children {
             let root_checkout = catalog
@@ -5496,6 +5752,10 @@ impl Workspace {
                     continue;
                 }
                 nested.insert(child.session.session_id.clone());
+                swarm_members
+                    .entry(root.clone())
+                    .or_default()
+                    .push(sidebar_swarm::Member::of(&child.session));
                 let entry = agents.entry(root.clone()).or_default();
                 entry.0 += 1;
                 if matches!(
@@ -5855,6 +6115,7 @@ impl Workspace {
         }
         if !ordered_sessions.is_empty() {
             let dock = self.render_project_dock(&groups, &ordered_sessions, cx);
+            let swarm_members = std::rc::Rc::new(swarm_members);
             list = list.child(div().relative().w_full().flex_1().min_h_0().child(
                 gpui::list(
                     self.sidebar_sessions_list.clone(),
@@ -5950,6 +6211,11 @@ impl Workspace {
 
                             let group_selected = is_open && this.sidebar_selection.contains(&session.session_id);
                             let (agent_total, agent_working) = row.agents;
+                            let agent_members = swarm_members
+                                .get(&session.session_id)
+                                .cloned()
+                                .unwrap_or_default();
+                            let agent_state = sidebar_swarm::summary_state(&agent_members);
                             let under_checkout = checkout_rows[row.project];
                             let close_id = session.session_id.clone();
                             let pin_id = session.session_id.clone();
@@ -6101,21 +6367,27 @@ impl Workspace {
                                                     .id(("sidebar-agents", sidebar_index))
                                                     .debug_selector(move || format!("sidebar-agents-{sidebar_index}"))
                                                     .flex_none()
-                                                    .h(px(16.0))
+                                                    .h(px(18.0))
                                                     .px(px(6.0))
                                                     .flex()
                                                     .items_center()
-                                                    .gap(px(3.0))
-                                                    .rounded_full()
-                                                    .bg(if agent_working > 0 { Theme::global().ACCENT_DIM } else { Theme::global().TOOL_BG })
-                                                    .text_size(px(9.0))
-                                                    .text_color(Theme::global().TEXT_DIM)
-                                                    .tooltip(move |_, cx| cx.new(|_| remotes::HeaderTooltip(format!(
-                                                        "{agent_total} swarm agent{} in this checkout{}",
-                                                        if agent_total == 1 { "" } else { "s" },
-                                                        if agent_working > 0 { format!(", {agent_working} working") } else { String::new() },
-                                                    ).into())).into())
-                                                    .child(gpui::svg().data(include_bytes!("../../../assets/icons/swarm.svg").as_slice()).size(px(9.0)).text_color(Theme::global().TEXT_DIM))
+                                                    .gap(px(5.0))
+                                                    .rounded(px(9.0))
+                                                    .hover(|el| el.bg(Theme::global().TOOL_BG))
+                                                    .font_family(Theme::global().FONT_UI)
+                                                    .text_size(px(11.0))
+                                                    .text_color(if agent_working > 0 { Theme::global().TEXT_DIM } else { Theme::global().TEXT_FAINT })
+                                                    .tooltip(move |_, cx| {
+                                                        if agent_members.is_empty() {
+                                                            cx.new(|_| remotes::HeaderTooltip(format!(
+                                                                "{agent_total} agent{}",
+                                                                if agent_total == 1 { "" } else { "s" },
+                                                            ).into())).into()
+                                                        } else {
+                                                            cx.new(|_| sidebar_swarm::SwarmTooltip(agent_members.clone())).into()
+                                                        }
+                                                    })
+                                                    .child(sidebar_swarm::dot(agent_state, 6.0))
                                                     .child(agent_total.to_string()),
                                             ))
                                             // Idle rows keep the pin visible when pinned. Hovering
@@ -6301,22 +6573,9 @@ impl Workspace {
                         .items_end()
                         .justify_start()
                         .relative()
-                        // Keep one backing tone around the folder's top-left curve.
-                        // A dark navigation rectangle here pinches that curve into a notch.
-                        .bg(if folders {
-                            Theme::global().HEADER_BG
-                        } else {
-                            Theme::global().PANEL_BG
-                        })
-                        .child(
-                            div()
-                                .absolute()
-                                .left_0()
-                                .right_0()
-                                .bottom_0()
-                                .h(px(1.0))
-                                .bg(Theme::global().PANEL_BORDER),
-                        )
+                        // One calm tone with the rest of the sidebar: the
+                        // selected button's fill is the only emphasis.
+                        .bg(Theme::global().HEADER_BG)
                         .child(
                             div()
                                 .flex_1()
@@ -6338,8 +6597,8 @@ impl Workspace {
                                         .h(px(34.0))
                                         .min_w_0()
                                         .flex()
-                                        .items_end()
-                                        .gap_1()
+                                        .items_center()
+                                        .gap(px(2.0))
                                         .overflow_x_scroll()
                                         .track_scroll(&self.sidebar_navigation_scroll)
                                         .on_scroll_wheel(cx.listener(
@@ -6364,24 +6623,21 @@ impl Workspace {
                                                 .id("sidebar-sessions-tab")
                                                 .debug_selector(|| "sidebar-sessions-tab".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .when(
                                                     self.sidebar_view == SidebarView::Sessions,
                                                     |el| {
-                                                        el.h(px(34.0))
-                                                            .border_b_0()
-                                                            .bg(Theme::global().HEADER_BG)
+                                                        el.bg(Theme::global().PANEL_BG)
                                                     },
                                                 )
                                                 .cursor_pointer()
-                                                .text_size(px(11.0))
+                                                .text_size(px(12.5))
                                                 .text_color(
                                                     if self.sidebar_view == SidebarView::Sessions {
                                                         Theme::global().TEXT
@@ -6389,7 +6645,7 @@ impl Workspace {
                                                         Theme::global().TEXT_DIM
                                                     },
                                                 )
-                                                .hover(|el| el.bg(Theme::global().HEADER_BG))
+                                                .hover(|el| el.bg(Theme::global().PANEL_BG).text_color(Theme::global().TEXT))
                                                 .on_mouse_down(
                                                     gpui::MouseButton::Left,
                                                     cx.listener(|this, _, _, cx| {
@@ -6397,7 +6653,7 @@ impl Workspace {
                                                         cx.notify();
                                                     }),
                                                 )
-                                                .child("chat"),
+                                                .child("Chat"),
                                         )
                                         .child(self.render_tutorial_tab(cx))
                                         .child(
@@ -6405,24 +6661,21 @@ impl Workspace {
                                                 .id("sidebar-files-tab")
                                                 .debug_selector(|| "sidebar-files-tab".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .when(
                                                     self.sidebar_view == SidebarView::Files,
                                                     |el| {
-                                                        el.h(px(34.0))
-                                                            .border_b_0()
-                                                            .bg(Theme::global().HEADER_BG)
+                                                        el.bg(Theme::global().PANEL_BG)
                                                     },
                                                 )
                                                 .cursor_pointer()
-                                                .text_size(px(11.0))
+                                                .text_size(px(12.5))
                                                 .text_color(
                                                     if self.sidebar_view == SidebarView::Files {
                                                         Theme::global().TEXT
@@ -6430,7 +6683,7 @@ impl Workspace {
                                                         Theme::global().TEXT_DIM
                                                     },
                                                 )
-                                                .hover(|el| el.bg(Theme::global().HEADER_BG))
+                                                .hover(|el| el.bg(Theme::global().PANEL_BG).text_color(Theme::global().TEXT))
                                                 .on_mouse_down(
                                                     gpui::MouseButton::Left,
                                                     cx.listener(|this, _, _, cx| {
@@ -6438,31 +6691,28 @@ impl Workspace {
                                                         cx.notify();
                                                     }),
                                                 )
-                                                .child("files"),
+                                                .child("Files"),
                                         )
                                         .child(
                                             div()
                                                 .id("sidebar-accounts-tab")
                                                 .debug_selector(|| "sidebar-accounts-tab".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .when(
                                                     self.sidebar_view == SidebarView::Accounts,
                                                     |el| {
-                                                        el.h(px(34.0))
-                                                            .border_b_0()
-                                                            .bg(Theme::global().HEADER_BG)
+                                                        el.bg(Theme::global().PANEL_BG)
                                                     },
                                                 )
                                                 .cursor_pointer()
-                                                .text_size(px(11.0))
+                                                .text_size(px(12.5))
                                                 .text_color(
                                                     if self.sidebar_view == SidebarView::Accounts {
                                                         Theme::global().TEXT
@@ -6470,7 +6720,7 @@ impl Workspace {
                                                         Theme::global().TEXT_DIM
                                                     },
                                                 )
-                                                .hover(|el| el.bg(Theme::global().HEADER_BG))
+                                                .hover(|el| el.bg(Theme::global().PANEL_BG).text_color(Theme::global().TEXT))
                                                 .on_mouse_down(
                                                     gpui::MouseButton::Left,
                                                     cx.listener(|this, _, _, cx| {
@@ -6478,7 +6728,7 @@ impl Workspace {
                                                         cx.notify();
                                                     }),
                                                 )
-                                                .child("accounts"),
+                                                .child("Accounts"),
                                         )
                                         .child(self.render_preference_tab(
                                             SidebarView::Theme,
@@ -6495,19 +6745,18 @@ impl Workspace {
                                                 .id("sidebar-orchestration")
                                                 .debug_selector(|| "sidebar-orchestration".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .cursor_pointer()
-                                                .text_size(px(11.0))
+                                                .text_size(px(12.5))
                                                 .text_color(Theme::global().TEXT_DIM)
                                                 .hover(|el| {
-                                                    el.bg(Theme::global().HEADER_BG)
+                                                    el.bg(Theme::global().PANEL_BG)
                                                         .text_color(Theme::global().TEXT)
                                                 })
                                                 .on_mouse_down(
@@ -6520,26 +6769,25 @@ impl Workspace {
                                                         )
                                                     }),
                                                 )
-                                                .child("orchestration"),
+                                                .child("Orchestration"),
                                         )
                                         .child(
                                             div()
                                                 .id("sidebar-unfinished-work")
                                                 .debug_selector(|| "sidebar-unfinished-work".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .cursor_pointer()
-                                                .text_size(px(11.0))
+                                                .text_size(px(12.5))
                                                 .text_color(Theme::global().TEXT_DIM)
                                                 .hover(|el| {
-                                                    el.bg(Theme::global().HEADER_BG)
+                                                    el.bg(Theme::global().PANEL_BG)
                                                         .text_color(Theme::global().TEXT)
                                                 })
                                                 .on_mouse_down(
@@ -6552,26 +6800,25 @@ impl Workspace {
                                                         );
                                                     }),
                                                 )
-                                                .child("todos"),
+                                                .child("Todos"),
                                         )
                                         .child(
                                             div()
                                                 .id("open-todoist")
                                                 .debug_selector(|| "open-todoist".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .cursor_pointer()
-                                                .text_size(px(11.0))
+                                                .text_size(px(12.5))
                                                 .text_color(Theme::global().TEXT_DIM)
                                                 .hover(|el| {
-                                                    el.bg(Theme::global().HEADER_BG)
+                                                    el.bg(Theme::global().PANEL_BG)
                                                         .text_color(Theme::global().TEXT)
                                                 })
                                                 .on_mouse_down(
@@ -6580,26 +6827,25 @@ impl Workspace {
                                                         this.open_todoist(&OpenTodoist, window, cx)
                                                     }),
                                                 )
-                                                .child("todoist"),
+                                                .child("Todoist"),
                                         )
                                         .child(
                                             div()
                                                 .id("open-gmail")
                                                 .debug_selector(|| "open-gmail".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .cursor_pointer()
-                                                .text_size(px(11.0))
+                                                .text_size(px(12.5))
                                                 .text_color(Theme::global().TEXT_DIM)
                                                 .hover(|el| {
-                                                    el.bg(Theme::global().HEADER_BG)
+                                                    el.bg(Theme::global().PANEL_BG)
                                                         .text_color(Theme::global().TEXT)
                                                 })
                                                 .on_mouse_down(
@@ -6608,26 +6854,25 @@ impl Workspace {
                                                         this.open_gmail(&OpenGmail, window, cx)
                                                     }),
                                                 )
-                                                .child("email"),
+                                                .child("Email"),
                                         )
                                         .child(
                                             div()
                                                 .id("sidebar-open-folder")
                                                 .debug_selector(|| "sidebar-open-folder".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .cursor_pointer()
-                                                .text_size(px(11.0))
+                                                .text_size(px(12.5))
                                                 .text_color(Theme::global().TEXT_DIM)
                                                 .hover(|el| {
-                                                    el.bg(Theme::global().HEADER_BG)
+                                                    el.bg(Theme::global().PANEL_BG)
                                                         .text_color(Theme::global().TEXT)
                                                 })
                                                 .on_mouse_down(
@@ -6636,7 +6881,7 @@ impl Workspace {
                                                         this.open_folder(&OpenFolder, window, cx);
                                                     }),
                                                 )
-                                                .child("folder"),
+                                                .child("Folder"),
                                         )
                                         .child(
                                             div()
@@ -6646,19 +6891,18 @@ impl Workspace {
                                                 // knowledge of super-enter.
                                                 .debug_selector(|| "sidebar-new-session".into())
                                                 .flex_none()
-                                                .border_1()
-                                                .border_color(Theme::global().PANEL_BORDER)
-                                                .px_2()
-                                                .py_1()
-                                                .rounded_t_md()
-                                                .h(px(30.0))
+                                                .h(px(responsive::NAV_ITEM_HEIGHT))
+                                                .px(px(9.0))
                                                 .flex()
                                                 .items_center()
+                                                .rounded(px(8.0))
+                                                .font_family(Theme::global().FONT_UI)
+                                                .font_weight(gpui::FontWeight::MEDIUM)
                                                 .cursor_pointer()
                                                 .text_size(px(16.0))
                                                 .text_color(Theme::global().TEXT_DIM)
                                                 .hover(|el| {
-                                                    el.bg(Theme::global().HEADER_BG)
+                                                    el.bg(Theme::global().PANEL_BG)
                                                         .text_color(Theme::global().TEXT)
                                                 })
                                                 .on_mouse_down(
@@ -6812,9 +7056,10 @@ impl Workspace {
                     .flex_none()
                     .px_4()
                     .pb(px(2.0))
-                    .text_size(px(10.0))
-                    .text_color(Theme::global().TEXT_DIM)
-                    .child("accounts"),
+                    .text_size(px(11.0))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(Theme::global().TEXT_FAINT)
+                    .child("Accounts"),
             );
 
         let active = self.slots.get(self.active).and_then(|slot| {
@@ -6871,8 +7116,9 @@ impl Workspace {
                         .px_4()
                         .pt_2()
                         .pb_1()
-                        .text_size(px(10.0))
-                        .text_color(Theme::global().TEXT_DIM)
+                        .text_size(px(11.0))
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(Theme::global().TEXT_FAINT)
                         .child(if available {
                             "Connected"
                         } else {
@@ -6925,23 +7171,23 @@ impl Workspace {
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(11.0))
+                                .text_size(px(13.0))
                                 .text_color(ink)
                                 .child(account.display_name.clone()),
                         )
                         .child(
                             div()
                                 .flex_none()
-                                .text_size(px(9.0))
-                                .text_color(Theme::global().TEXT_DIM)
+                                .text_size(px(11.0))
+                                .text_color(Theme::global().TEXT_FAINT)
                                 .child(account.auth_kind.clone()),
                         ),
                 )
                 .child(
                     div()
                         .debug_selector(|| format!("account-{}-status", account.id))
-                        .text_size(px(9.0))
-                        .line_height(px(13.0))
+                        .text_size(px(11.0))
+                        .line_height(px(14.0))
                         .text_color(if account.status == "expired" {
                             Theme::global().WARN
                         } else {
@@ -6984,9 +7230,9 @@ impl Workspace {
                                 .child(
                                     div()
                                         .overflow_hidden()
-                                        .h(px(12.0))
-                                        .line_height(px(12.0))
-                                        .text_size(px(8.0))
+                                        .h(px(13.0))
+                                        .line_height(px(13.0))
+                                        .text_size(px(10.5))
                                         .text_color(Theme::global().TEXT_DIM)
                                         .child(label),
                                 )
@@ -6996,7 +7242,7 @@ impl Workspace {
                                         .h(px(3.0))
                                         .rounded_full()
                                         .overflow_hidden()
-                                        .bg(Theme::global().INLINE_CODE_BG)
+                                        .bg(Theme::global().TEXT.opacity(0.08))
                                         .child(
                                             div()
                                                 .h_full()
@@ -7040,12 +7286,12 @@ impl Workspace {
                             })
                             .flex_none()
                             .px(px(8.0))
-                            .h(px(16.0))
+                            .h(px(18.0))
                             .flex()
                             .items_center()
                             .rounded_full()
                             .cursor_pointer()
-                            .text_size(px(9.0))
+                            .text_size(px(10.5))
                             .bg(Theme::global().ACCENT.opacity(0.16))
                             .text_color(Theme::global().ACCENT)
                             .hover(|el| el.bg(Theme::global().ACCENT.opacity(0.26)))
@@ -7079,12 +7325,12 @@ impl Workspace {
                                 })
                                 .flex_none()
                                 .px(px(8.0))
-                                .h(px(16.0))
+                                .h(px(18.0))
                                 .flex()
                                 .items_center()
                                 .rounded_full()
                                 .cursor_pointer()
-                                .text_size(px(9.0))
+                                .text_size(px(10.5))
                                 .bg(Theme::global().WARN.opacity(0.16))
                                 .text_color(Theme::global().WARN)
                                 .hover(|el| el.bg(Theme::global().WARN.opacity(0.26)))
@@ -7116,8 +7362,8 @@ impl Workspace {
                     .flex()
                     .flex_col()
                     .gap(px(1.0))
-                    .text_size(px(9.0))
-                    .line_height(px(13.0))
+                    .text_size(px(10.5))
+                    .line_height(px(14.0))
                     .text_color(Theme::global().TEXT_DIM);
                 if account.usage_reports.is_empty() {
                     history = history.child(
@@ -7190,27 +7436,14 @@ impl Workspace {
                     .when(!grows, |row| row.h(px(ACCOUNT_ROW_HEIGHT)))
                     .py_1()
                     .overflow_hidden()
-                    .rounded_md()
+                    .rounded(px(8.0))
                     .flex()
                     .items_center()
                     .when(grows, |row| row.items_start())
-                    .gap_2()
-                    .hover(|el| el.bg(Theme::global().HEADER_BG))
+                    .gap(px(10.0))
+                    .hover(|el| el.bg(Theme::global().TEXT.opacity(0.05)))
                     .child(logo)
-                    .child(details)
-                    .child(
-                        div()
-                            .flex_none()
-                            .size(px(5.0))
-                            .rounded_full()
-                            .bg(if available {
-                                Theme::global().OK
-                            } else if account.status == "expired" {
-                                Theme::global().WARN
-                            } else {
-                                Theme::global().TEXT_FAINT
-                            }),
-                    ),
+                    .child(details),
             );
         }
 
@@ -7243,25 +7476,24 @@ impl Workspace {
             .id(format!("sidebar-{label}-tab"))
             .debug_selector(move || format!("sidebar-{label}-tab"))
             .flex_none()
-            .border_1()
-            .border_color(Theme::global().PANEL_BORDER)
-            .px_2()
-            .py_1()
-            .rounded_t_md()
-            .h(px(30.0))
+            .h(px(responsive::NAV_ITEM_HEIGHT))
+            .px(px(9.0))
             .flex()
             .items_center()
+            .rounded(px(8.0))
+            .font_family(Theme::global().FONT_UI)
+            .font_weight(gpui::FontWeight::MEDIUM)
             .when(selected, |el| {
-                el.h(px(34.0)).border_b_0().bg(Theme::global().HEADER_BG)
+                el.bg(Theme::global().PANEL_BG)
             })
             .cursor_pointer()
-            .text_size(px(11.0))
+            .text_size(px(12.5))
             .text_color(if selected {
                 Theme::global().TEXT
             } else {
                 Theme::global().TEXT_DIM
             })
-            .hover(|el| el.bg(Theme::global().HEADER_BG))
+            .hover(|el| el.bg(Theme::global().PANEL_BG).text_color(Theme::global().TEXT))
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(move |this, _, _, cx| {
@@ -7269,74 +7501,122 @@ impl Workspace {
                     cx.notify();
                 }),
             )
-            .child(label)
+            .child({
+                let mut chars = label.chars();
+                chars
+                    .next()
+                    .map(|first| first.to_uppercase().chain(chars).collect::<String>())
+                    .unwrap_or_default()
+            })
             .into_any_element()
     }
 
     fn render_theme_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let active = Theme::active_preset();
-        let mut picker = div()
-            .id("theme-settings")
-            .debug_selector(|| "theme-settings".into())
-            .p_3()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .text_size(px(11.0))
-            .child(div().text_size(px(14.0)).child("Theme"))
-            .child(
-                div()
-                    .text_color(Theme::global().TEXT_DIM)
-                    .child("Choose a palette. Changes save automatically."),
-            );
+        let theme = Theme::global();
+        let mut grid = div().flex().flex_wrap().gap(px(8.0)).px(px(4.0));
         for (index, preset) in ThemePreset::ALL.into_iter().enumerate() {
-            picker = picker.child(
+            let selected = preset == active;
+            let t = Theme::preview(preset);
+            let line = |width: f32, color: gpui::Rgba| {
+                div().h(px(3.0)).w(px(width)).rounded_full().bg(color)
+            };
+            // A miniature workspace in the preset's own palette. Only the
+            // selected card gets a ring, in the current accent.
+            let swatch = div()
+                .h(px(40.0))
+                .w_full()
+                .p(px(5.0))
+                .flex()
+                .gap(px(4.0))
+                .rounded(px(7.0))
+                .bg(t.BG)
+                .border_1()
+                .border_color(theme.TEXT.opacity(0.08))
+                .child(div().w(px(14.0)).h_full().rounded(px(4.0)).bg(t.HEADER_BG))
+                .child(
+                    div()
+                        .flex_1()
+                        .h_full()
+                        .p(px(4.0))
+                        .rounded(px(4.0))
+                        .bg(t.PANEL_BG)
+                        .flex()
+                        .flex_col()
+                        .gap(px(3.0))
+                        .child(line(30.0, t.TEXT))
+                        .child(line(42.0, t.TEXT_DIM))
+                        .child(line(18.0, t.ACCENT)),
+                );
+            grid = grid.child(
                 div()
                     .id(("theme-preset", index))
                     .debug_selector(move || format!("theme-preset-{index}"))
                     .flex_none()
-                    .px_3()
-                    .py_2()
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .text_color(if preset == active {
-                        Theme::global().ACCENT
+                    .w(px(106.0))
+                    .p(px(4.0))
+                    .rounded(px(10.0))
+                    .border_2()
+                    .border_color(if selected {
+                        theme.ACCENT
                     } else {
-                        Theme::global().TEXT
+                        gpui::transparent_black().into()
                     })
-                    .when(preset == active, |el| el.bg(Theme::global().ACCENT_DIM))
-                    .hover(|el| el.bg(Theme::global().TOOL_BG))
+                    .cursor_pointer()
+                    .flex()
+                    .flex_col()
+                    .gap(px(5.0))
+                    .when(!selected, |el| el.hover(|el| el.bg(theme.TOOL_BG)))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |this, _, _, cx| this.select_theme(preset, cx)),
                     )
-                    .child(if preset == active {
-                        format!("{}  ✓", preset.label())
-                    } else {
-                        preset.label().to_owned()
-                    }),
+                    .child(swatch)
+                    .child(
+                        div()
+                            .px(px(2.0))
+                            .pb(px(1.0))
+                            .truncate()
+                            .text_size(px(12.5))
+                            .when(selected, |el| el.font_weight(gpui::FontWeight::MEDIUM))
+                            .text_color(if selected { theme.TEXT } else { theme.TEXT_DIM })
+                            .child(preset.label()),
+                    ),
             );
         }
-        picker.into_any_element()
-    }
-
-    fn render_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let mut settings = div()
-            .id("workspace-settings")
-            .debug_selector(|| "workspace-settings".into())
-            .p_3()
+        div()
+            .id("theme-settings")
+            .debug_selector(|| "theme-settings".into())
+            .size_full()
+            .px(px(8.0))
+            .py(px(10.0))
             .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap_2()
-            .text_size(px(11.0))
-            .child(div().text_size(px(14.0)).child("Settings"))
-            .child(
-                div()
-                    .text_color(Theme::global().TEXT_DIM)
-                    .child("Current window"),
-            );
+            .gap(px(6.0))
+            .font_family(theme.FONT_UI)
+            .child(settings_rows::page_title("Theme"))
+            .child(grid)
+            .into_any_element()
+    }
+
+    fn render_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = Theme::global();
+        let mut settings = div()
+            .id("workspace-settings")
+            .debug_selector(|| "workspace-settings".into())
+            .size_full()
+            .px(px(8.0))
+            .py(px(10.0))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .gap(px(2.0))
+            .font_family(theme.FONT_UI)
+            .text_size(px(13.0))
+            .text_color(theme.TEXT)
+            .child(settings_rows::page_title("Settings"))
+            .child(settings_rows::section_label("Interface"));
         for (id, label, enabled) in [
             ("settings-minimap", "Workspace minimap", self.show_minimap),
             (
@@ -7346,19 +7626,7 @@ impl Workspace {
             ),
         ] {
             settings = settings.child(
-                div()
-                    .id(id)
-                    .debug_selector(move || id.into())
-                    .flex_none()
-                    .px_2()
-                    .py_2()
-                    .rounded_sm()
-                    .flex()
-                    .justify_between()
-                    .gap_2()
-                    .cursor_pointer()
-                    .bg(Theme::global().PANEL_BG)
-                    .hover(|el| el.bg(Theme::global().TOOL_BG))
+                settings_rows::row(id, label)
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {
@@ -7370,33 +7638,12 @@ impl Workspace {
                             }
                         }),
                     )
-                    .child(label)
-                    .child(
-                        div()
-                            .text_color(if enabled {
-                                Theme::global().ACCENT
-                            } else {
-                                Theme::global().TEXT_DIM
-                            })
-                            .child(if enabled { "On" } else { "Off" }),
-                    ),
+                    .child(settings_rows::switch(enabled)),
             );
         }
         let folder_tabs = self.layout_mode == crate::config::LayoutMode::FolderTabs;
         settings = settings.child(
-            div()
-                .id("settings-folder-tabs")
-                .debug_selector(|| "settings-folder-tabs".into())
-                .flex_none()
-                .px_2()
-                .py_2()
-                .rounded_sm()
-                .flex()
-                .justify_between()
-                .gap_2()
-                .cursor_pointer()
-                .bg(Theme::global().PANEL_BG)
-                .hover(|el| el.bg(Theme::global().TOOL_BG))
+            settings_rows::row("settings-folder-tabs", "Workspace layout")
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(|this, _, _, cx| {
@@ -7413,47 +7660,32 @@ impl Workspace {
                         cx.notify();
                     }),
                 )
-                .child("Workspace layout")
-                .child(
-                    div()
-                        .text_color(if folder_tabs {
-                            Theme::global().ACCENT
-                        } else {
-                            Theme::global().TEXT_DIM
-                        })
-                        .child(if folder_tabs { "Folder tabs" } else { "Normal" }),
-                ),
+                .child(settings_rows::value(if folder_tabs {
+                    "Folder tabs"
+                } else {
+                    "Normal"
+                })),
         );
         let applet_settings = self.render_applet_settings(cx);
         settings
-            .child(self.render_account_settings(cx))
             .child(self.render_account_email_setting(cx))
+            .child(settings_rows::section_label("Machines"))
+            .child(
+                settings_rows::with_tooltip(
+                    settings_rows::row("settings-machines", "Machines"),
+                    "Connect machines and choose where new panels open",
+                )
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _, window, cx| {
+                        this.open_machines(window, cx);
+                    }),
+                )
+                .child(settings_rows::chevron()),
+            )
+            .child(self.render_account_settings(cx))
             .child(self.render_sound_settings(cx))
             .children(applet_settings)
-            .child(
-                div()
-                    .id("settings-machines")
-                    .debug_selector(|| "settings-machines".into())
-                    .px_2()
-                    .py_2()
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .bg(Theme::global().PANEL_BG)
-                    .hover(|el| el.bg(Theme::global().TOOL_BG))
-                    .on_mouse_down(
-                        gpui::MouseButton::Left,
-                        cx.listener(|this, _, window, cx| {
-                            this.open_machines(window, cx);
-                        }),
-                    )
-                    .child("Machines and default new-panel location →"),
-            )
-            .child(
-                div()
-                    .mt_2()
-                    .text_color(Theme::global().TEXT_DIM)
-                    .child("Color palettes are in the Theme tab."),
-            )
             .into_any_element()
     }
 
@@ -7493,10 +7725,8 @@ impl Workspace {
             .flex()
             .flex_col()
             .gap(px(MINIMAP_ROW_GAP))
-            .rounded_lg()
+            .rounded(px(10.0))
             .bg(Theme::global().MINIMAP_BG)
-            .border_1()
-            .border_color(Theme::global().PANEL_BORDER)
             .occlude()
             // Scrolling over the map pans the active strip's camera, scaled
             // back up to canvas distance so the map and canvas move 1:1.
@@ -7540,18 +7770,18 @@ impl Workspace {
                 .debug_selector(move || format!("minimap-row-{row}"))
                 .relative()
                 .h(px(MINIMAP_ROW_HEIGHT))
-                .rounded(px(3.0))
+                .rounded(px(5.0))
                 .cursor_pointer()
                 .bg((if active_row {
                     Theme::global().MINIMAP_TRACK_ACTIVE
                 } else {
                     Theme::global().MINIMAP_TRACK
                 })
-                .blend(accent.opacity(if active_row { 0.16 } else { 0.06 })))
+                .blend(accent.opacity(if active_row { 0.08 } else { 0.0 })))
                 .hover(|el| {
                     el.bg(Theme::global()
                         .MINIMAP_TRACK_ACTIVE
-                        .blend(accent.opacity(0.20)))
+                        .blend(accent.opacity(0.10)))
                 })
                 .child(
                     div()
@@ -7565,9 +7795,10 @@ impl Workspace {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded(px(3.0))
+                        .rounded(px(5.0))
+                        .font_family(Theme::global().FONT_UI)
                         .text_size(px(11.0))
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(gpui::FontWeight::MEDIUM)
                         .cursor_pointer()
                         .on_mouse_down(
                             gpui::MouseButton::Left,
@@ -7582,12 +7813,12 @@ impl Workspace {
                         .bg(if active_row {
                             accent
                         } else {
-                            Theme::global().MINIMAP_BG
+                            gpui::transparent_black().into()
                         })
                         .text_color(if active_row {
                             Theme::global().PANEL_BG
                         } else {
-                            accent
+                            Theme::global().TEXT_FAINT
                         })
                         .child(format!("{}", row + 1))
                         .when(active_row, |el| {
@@ -7648,10 +7879,11 @@ impl Workspace {
                             .top(px(top))
                             .w(px(width))
                             .h(px(height))
-                            .rounded(px(2.0))
+                            .rounded(px(3.0))
+                            .overflow_hidden()
                             .cursor_pointer()
                             .bg(if focused {
-                                Theme::global().MINIMAP_PANEL_BUSY
+                                Theme::global().TEXT_DIM
                             } else {
                                 Theme::global().MINIMAP_PANEL
                             })
@@ -7684,7 +7916,7 @@ impl Workspace {
                                         .bg(Theme::global().OK),
                                 )
                             })
-                            .hover(|el| el.bg(Theme::global().MINIMAP_PANEL_BUSY))
+                            .hover(|el| el.bg(Theme::global().TEXT_FAINT))
                             .on_mouse_down(
                                 gpui::MouseButton::Left,
                                 cx.listener(move |this, _event, window, cx| {
@@ -7711,9 +7943,9 @@ impl Workspace {
                         .top(px(0.0))
                         .w(px(lens_width))
                         .h(px(MINIMAP_ROW_HEIGHT))
-                        .rounded(px(3.0))
+                        .rounded(px(5.0))
                         .border_1()
-                        .border_color(accent),
+                        .border_color(accent.opacity(0.7)),
                 );
 
                 // A persistent pin marks the exact focused panel. Unlike the
@@ -7731,7 +7963,7 @@ impl Workspace {
                             .w(px(4.0))
                             .h(px(4.0))
                             .rounded_full()
-                            .bg(Theme::global().TEXT),
+                            .bg(Theme::global().PANEL_BG),
                     );
                 }
 
@@ -8646,6 +8878,9 @@ impl Render for Workspace {
                     .when(self.show_sidebar && !compact, |root| {
                         root.child(self.render_sidebar(fullscreen, cx))
                     })
+                    .when(responsive::shows_rail(self.show_sidebar, compact), |root| {
+                        root.child(self.render_sidebar_rail(fullscreen, cx))
+                    })
                     .child(
                         div()
                             .relative()
@@ -9158,6 +9393,34 @@ fn sidebar_session_directory(session: &jcode_sdk::SessionInfo) -> Option<String>
 }
 
 /// Creation timestamp embedded in modern session ids (`session_fox_<ms>_...`).
+/// One calm line for an overview card: the latest thing the session did.
+fn overview_activity(items: &[crate::panel::Item]) -> String {
+    let line = |text: &str| {
+        text.lines()
+            .map(|line| line.trim().trim_start_matches(['#', '>', '-', '*', ' ']).trim())
+            .find(|line| !line.is_empty() && !line.starts_with("```"))
+            .unwrap_or_default()
+            .replace(['*', '`'], "")
+    };
+    items
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            crate::panel::Item::Assistant(text) | crate::panel::Item::User(text) => {
+                Some(line(text)).filter(|text| !text.is_empty())
+            }
+            crate::panel::Item::Tool { name, done, .. } => Some(if *done {
+                format!("Used {name}")
+            } else {
+                format!("Running {name}")
+            }),
+            crate::panel::Item::Error(text) => Some(line(text)),
+            _ => None,
+        })
+        .map(|text| text.chars().take(160).collect())
+        .unwrap_or_else(|| "No activity yet".into())
+}
+
 fn sidebar_session_created_ms(session_id: &str) -> Option<u64> {
     session_id
         .split('_')
@@ -15355,10 +15618,12 @@ mod tests {
                 cx.simulate_click(tab.center(), gpui::Modifiers::default());
                 cx.run_until_parked();
                 if selector.ends_with("-tab") {
+                    // Flat buttons: the selection is a fill, not a tab that
+                    // grows down to join its content.
                     let selected = cx.debug_bounds(selector).unwrap();
                     let directory = cx.debug_bounds("default-directory-button").unwrap();
-                    assert_eq!(selected.bottom(), directory.top());
-                    assert_eq!(selected.size.height, px(34.0));
+                    assert!(selected.bottom() <= directory.top());
+                    assert_eq!(selected.size.height, px(responsive::NAV_ITEM_HEIGHT));
                 }
                 return;
             }

@@ -224,11 +224,11 @@ fn pinned_task_selection_copies_without_collapsing_card(cx: &mut gpui::TestAppCo
         drag_copy(vcx, "selectable-text-pinned-todo-task-0-0"),
         "Make βeta selectable"
     );
-    // Group headers render uppercase (TUI style, be2bc0e); the copy is
+    // Group headers render as quiet sentence-case captions; the copy is
     // what is shown.
     assert_eq!(
         drag_copy(vcx, "selectable-text-pinned-todo-group-0"),
-        "SELECTION"
+        "Selection"
     );
     assert_eq!(
         drag_copy(vcx, "selectable-text-pinned-todo-intention"),

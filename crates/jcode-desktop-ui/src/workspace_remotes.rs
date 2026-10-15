@@ -944,97 +944,219 @@ impl Workspace {
 
     pub(super) fn render_machines(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = Theme::global();
-        let mut picker = div().id("machines-picker").debug_selector(|| "machines-picker".into())
-            .size_full().p_3().flex().flex_col().gap_2().overflow_y_scroll().text_size(px(11.0))
-            .child(div().flex().justify_between()
-                .child(div().text_size(px(14.0)).child("Machines"))
-                .child(div().id("machines-panel-close").debug_selector(|| "machines-panel-close".into())
-                    .cursor_pointer().child("close")
-                    .on_click(cx.listener(|this, _, _, cx| { cx.stop_propagation(); this.close_machines(cx); }))))
-            .child(div().text_color(theme.TEXT_DIM)
-                .child("Connect opens a new panel. Default applies to new session panels, including after restart."))
-            .child(div().debug_selector(|| "machine-connection-status".into())
-                .text_color(if self.remotes.failed { theme.ERROR } else { theme.ACCENT })
-                .child(self.remotes.status.clone().unwrap_or_default()))
-            .children((self.remotes.startup_failed && self.slots.iter().any(|slot| !slot.closing && slot.panel.read(cx).is_startup_draft())).then(|| {
-                div().id("machine-retry-startup").debug_selector(|| "machine-retry-startup".into())
-                    .px_2().py_2().cursor_pointer().bg(theme.ACCENT_DIM)
-                    .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
-                        if let Some(index) = this.slots.iter().position(|slot| !slot.closing && slot.panel.read(cx).is_startup_draft()) {
-                            this.retry_pending_session(index, false, cx);
-                        }
-                    })).child("Retry startup on default machine")
-            }))
+        let caption = |text: &'static str| {
+            div()
+                .mt(px(10.0))
+                .px(px(4.0))
+                .text_size(px(11.0))
+                .text_color(theme.TEXT_FAINT)
+                .child(text)
+        };
+        let status = self.remotes.status.clone().unwrap_or_default();
+        let mut picker = div()
+            .id("machines-picker")
+            .debug_selector(|| "machines-picker".into())
+            .size_full()
+            .px(px(20.0))
+            .py(px(18.0))
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .overflow_y_scroll()
+            .font_family(theme.FONT_UI)
+            .text_size(px(12.5))
+            .text_color(theme.TEXT)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .mb(px(6.0))
+                    .child(
+                        div()
+                            .id("machines-title")
+                            .text_size(px(17.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .tooltip(|_, cx| {
+                                cx.new(|_| HeaderTooltip(
+                                    "Connect opens a new panel. Default applies to new session panels, including after restart.".into(),
+                                ))
+                                .into()
+                            })
+                            .child("Machines"),
+                    )
+                    .child(
+                        div()
+                            .id("machines-panel-close")
+                            .debug_selector(|| "machines-panel-close".into())
+                            .h(px(26.0))
+                            .px(px(10.0))
+                            .flex()
+                            .items_center()
+                            .rounded(px(13.0))
+                            .cursor_pointer()
+                            .text_size(px(12.0))
+                            .text_color(theme.TEXT_DIM)
+                            .hover(|el| el.bg(theme.HEADER_BG).text_color(theme.TEXT))
+                            .child("Close")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.close_machines(cx);
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "machine-connection-status".into())
+                    .px(px(4.0))
+                    .text_size(px(12.0))
+                    .text_color(if self.remotes.failed {
+                        theme.ERROR
+                    } else {
+                        theme.ACCENT
+                    })
+                    .when(status.is_empty(), |el| el.hidden())
+                    .child(status),
+            )
+            .children(
+                (self.remotes.startup_failed
+                    && self
+                        .slots
+                        .iter()
+                        .any(|slot| !slot.closing && slot.panel.read(cx).is_startup_draft()))
+                .then(|| {
+                    div()
+                        .id("machine-retry-startup")
+                        .debug_selector(|| "machine-retry-startup".into())
+                        .h(px(32.0))
+                        .px(px(14.0))
+                        .flex()
+                        .items_center()
+                        .rounded(px(10.0))
+                        .cursor_pointer()
+                        .bg(theme.ACCENT_DIM)
+                        .text_color(theme.TEXT)
+                        .hover(|el| el.bg(theme.ACCENT.opacity(0.22)))
+                        .on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                if let Some(index) = this.slots.iter().position(|slot| {
+                                    !slot.closing && slot.panel.read(cx).is_startup_draft()
+                                }) {
+                                    this.retry_pending_session(index, false, cx);
+                                }
+                            }),
+                        )
+                        .child("Retry startup on default machine")
+                }),
+            )
             .child(self.render_machine_row(None, 0, cx));
         for (index, host) in self.remotes.hosts.iter().enumerate() {
             picker = picker.child(self.render_machine_row(Some(host.clone()), index + 1, cx));
         }
-        picker = picker.child(div().mt_2().child("Connect another machine"));
+        picker = picker.child(
+            div()
+                .id("machine-ssh-help")
+                .flex()
+                .tooltip(|_, cx| {
+                    cx.new(|_| HeaderTooltip(
+                        "Uses your SSH config and keys. First connect in a terminal to trust the host and set up key access. Jcode must be installed on the remote machine.\nRemote panels start in the remote home. Folder browsing and terminal panels stay local.".into(),
+                    ))
+                    .into()
+                })
+                .child(caption("Connect another machine")),
+        );
         if let Some(input) = &self.remotes.input {
-            picker = picker
-                .child(
-                    div()
-                        .id("machine-host-input")
-                        .debug_selector(|| "machine-host-input".into())
-                        .on_mouse_down(
-                            gpui::MouseButton::Left,
-                            cx.listener(|this, _, window, cx| {
-                                if let Some(input) = &this.remotes.input {
-                                    let focus = input.read(cx).focus_handle.clone();
-                                    if let Some(index) = this.machines_panel_index(cx) {
-                                        this.set_active(index, cx);
+            picker = picker.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(
+                        div()
+                            .id("machine-host-input")
+                            .debug_selector(|| "machine-host-input".into())
+                            .flex_1()
+                            .min_w_0()
+                            .min_h(px(36.0))
+                            .px(px(4.0))
+                            .flex()
+                            .items_center()
+                            .rounded(px(10.0))
+                            .bg(theme.HEADER_BG)
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    if let Some(input) = &this.remotes.input {
+                                        let focus = input.read(cx).focus_handle.clone();
+                                        if let Some(index) = this.machines_panel_index(cx) {
+                                            this.set_active(index, cx);
+                                        }
+                                        window.focus(&focus, cx);
+                                        this.focus_pending = false;
                                     }
-                                    window.focus(&focus, cx);
-                                    this.focus_pending = false;
-                                }
-                                cx.stop_propagation();
-                            }),
-                        )
-                        .child(input.clone()),
-                )
-                .child(
-                    div()
-                        .id("machine-connect-input")
-                        .debug_selector(|| "machine-connect-input".into())
-                        .px_2()
-                        .py_2()
-                        .rounded_sm()
-                        .cursor_pointer()
-                        .bg(theme.ACCENT_DIM)
-                        .hover(|el| el.bg(theme.TOOL_BG))
-                        .on_mouse_down(
-                            gpui::MouseButton::Left,
-                            cx.listener(|this, _, _, cx| {
-                                if let Some(input) = &this.remotes.input {
-                                    let host = input.read(cx).snapshot().content;
-                                    this.connect_machine(Some(host), cx);
-                                }
-                            }),
-                        )
-                        .child("Connect via SSH"),
-                );
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .child(div().flex_1().min_w_0().child(input.clone())),
+                    )
+                    .child(
+                        div()
+                            .id("machine-connect-input")
+                            .debug_selector(|| "machine-connect-input".into())
+                            .flex_none()
+                            .h(px(36.0))
+                            .px(px(14.0))
+                            .flex()
+                            .items_center()
+                            .rounded(px(10.0))
+                            .cursor_pointer()
+                            .bg(theme.ACCENT_DIM)
+                            .hover(|el| el.bg(theme.ACCENT.opacity(0.22)))
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    if let Some(input) = &this.remotes.input {
+                                        let host = input.read(cx).snapshot().content;
+                                        this.connect_machine(Some(host), cx);
+                                    }
+                                }),
+                            )
+                            .child("Connect via SSH"),
+                    ),
+            );
         } else {
             picker = picker.child(
                 div()
                     .id("machine-add-host")
-                    .px_2()
-                    .py_2()
+                    .h(px(36.0))
+                    .px(px(12.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
+                    .rounded(px(10.0))
                     .cursor_pointer()
+                    .text_color(theme.TEXT_DIM)
+                    .hover(|el| el.bg(theme.HEADER_BG).text_color(theme.TEXT))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, window, cx| {
                             this.open_machines(window, cx);
                         }),
                     )
+                    .child(div().w(px(16.0)).flex().justify_center().child("+"))
                     .child("Add SSH host…"),
             );
         }
-        picker.child(div().text_color(theme.TEXT_DIM)
-                .child("Uses your SSH config and keys. First connect in a terminal to trust the host and set up key access. Jcode must be installed on the remote machine."))
-            .child(div().text_color(theme.TEXT_DIM)
-                .child("Remote panels start in the remote home. Folder browsing and terminal panels stay local."))
-            .children(self.remotes.notice.as_ref().map(|notice| div()
-                .debug_selector(|| "machine-error".into()).text_color(theme.ERROR).child(notice.clone())))
+        picker
+            .children(self.remotes.notice.as_ref().map(|notice| {
+                div()
+                    .debug_selector(|| "machine-error".into())
+                    .px(px(4.0))
+                    .text_size(px(12.0))
+                    .text_color(theme.ERROR)
+                    .child(notice.clone())
+            }))
             .into_any_element()
     }
 
@@ -1044,97 +1166,158 @@ impl Workspace {
         index: usize,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let theme = Theme::global();
         let is_default = self.remotes.default_host == host;
+        let managed = host.as_deref().is_some_and(managed_destination);
         let label = match host.as_deref() {
             Some(MANAGED_CLOUD_HOST) => "Jcode Cloud".into(),
-            Some(cloud_alpha::HOST) => "Personal cloud alpha (existing sessions only)".into(),
+            Some(cloud_alpha::HOST) => "Personal cloud alpha".into(),
             Some(host) => host.to_owned(),
             None => "This computer".into(),
         };
+        let (kind, icon): (&'static str, &'static [u8]) = match host.as_deref() {
+            None => ("Local", include_bytes!("../../../assets/icons/computer.svg")),
+            Some(_) if managed => (
+                "Cloud",
+                include_bytes!("../../../assets/icons/machine-cloud.svg"),
+            ),
+            Some(_) => ("SSH", include_bytes!("../../../assets/icons/ssh.svg")),
+        };
+        let detail: Option<String> = match host.as_deref() {
+            Some(cloud_alpha::HOST) => {
+                Some("Existing sessions only. Your own machine, run by Jcode. Sleeps when idle.".into())
+            }
+            Some(_) if managed => Some("Your own machine, run by Jcode. Sleeps when idle.".into()),
+            _ => None,
+        };
+        // Connected: a live panel already runs there (or, locally, the daemon).
+        let connected = match host.as_deref() {
+            None => self.connected,
+            Some(host) => self.slots.iter().any(|slot| {
+                let panel = slot.panel.read(cx);
+                !slot.closing
+                    && !panel.is_pending_session()
+                    && harness::remote_host(&panel.session_id)
+                        .is_some_and(|remote| new_session_host(&remote) == new_session_host(host))
+            }),
+        };
         let default_host = host.clone();
-        let cloud_status = host
-            .as_deref()
-            .is_some_and(managed_destination)
-            .then(|| "Your own machine, run by Jcode. Sleeps when idle.".to_owned());
         div()
-            .px_2()
-            .py_2()
-            .rounded_sm()
-            .bg(Theme::global().PANEL_BG)
+            .id(("machine-row", index))
+            .group("machine-row")
+            .h(px(36.0))
+            .pl(px(12.0))
+            .pr(px(4.0))
             .flex()
-            .flex_col()
-            .gap_2()
+            .items_center()
+            .gap(px(10.0))
+            .rounded(px(10.0))
+            .bg(theme.HEADER_BG)
+            .when(is_default, |el| el.bg(theme.USER_BG))
+            .child(
+                gpui::svg()
+                    .data(icon)
+                    .flex_none()
+                    .size(px(16.0))
+                    .text_color(if is_default { theme.TEXT } else { theme.TEXT_DIM }),
+            )
             .child(
                 div()
-                    .font_family(Theme::global().FONT_MONO)
+                    .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
+                    .text_size(px(13.0))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .when(host.as_deref().is_some_and(|host| !managed && !host.is_empty()), |el| {
+                        el.font_family(theme.FONT_MONO).text_size(px(12.5))
+                    })
                     .child(label),
             )
-            .children(cloud_status.map(|status| {
-                div()
-                    .debug_selector(|| "cloud-alpha-status".into())
-                    .text_color(Theme::global().TEXT_DIM)
-                    .child(status)
-            }))
             .child(
                 div()
+                    .id(("machine-kind", index))
+                    .when(detail.is_some(), |el| {
+                        el.debug_selector(|| "cloud-alpha-status".into())
+                    })
+                    .flex_none()
+                    .text_size(px(11.0))
+                    .text_color(theme.TEXT_DIM)
+                    .when_some(detail, |el, detail| {
+                        el.tooltip(move |_, cx| {
+                            cx.new(|_| HeaderTooltip(detail.clone().into())).into()
+                        })
+                    })
+                    .child(kind),
+            )
+            .when(connected, |el| {
+                el.child(
+                    div()
+                        .id(("machine-connected", index))
+                        .flex_none()
+                        .size(px(6.0))
+                        .rounded_full()
+                        .bg(theme.OK)
+                        .tooltip(|_, cx| cx.new(|_| HeaderTooltip("Connected".into())).into()),
+                )
+            })
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id(("machine-default", index))
+                    .debug_selector(move || format!("machine-default-{index}").into())
+                    .flex_none()
+                    .h(px(28.0))
+                    .px(px(10.0))
                     .flex()
-                    .gap_2()
-                    .justify_between()
-                    .child(
-                        div()
-                            .id(("machine-connect", index))
-                            .debug_selector(move || format!("machine-connect-{index}").into())
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .cursor_pointer()
-                            .bg(Theme::global().ACCENT_DIM)
-                            .hover(|el| el.bg(Theme::global().TOOL_BG))
-                            .on_mouse_down(
-                                gpui::MouseButton::Left,
-                                cx.listener(move |this, _, window, cx| {
-                                    cx.stop_propagation();
-                                    window.prevent_default();
-                                    this.connect_machine(host.clone(), cx);
-                                }),
-                            )
-                            // A real runtime can attach the new local panel
-                            // between press and release. Do not let the old
-                            // Machines surface reclaim selection on mouse-up.
-                            .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| {
-                                cx.stop_propagation();
-                            })
-                            .child("Connect"),
+                    .items_center()
+                    .rounded(px(8.0))
+                    .cursor_pointer()
+                    .text_size(px(12.0))
+                    .text_color(if is_default {
+                        theme.ACCENT
+                    } else {
+                        theme.TEXT_FAINT
+                    })
+                    .hover(|el| el.bg(theme.PANEL_BG).text_color(if is_default { theme.ACCENT } else { theme.TEXT }))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.set_default_machine(default_host.clone(), cx);
+                        }),
                     )
-                    .child(
-                        div()
-                            .id(("machine-default", index))
-                            .debug_selector(move || format!("machine-default-{index}").into())
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .cursor_pointer()
-                            .text_color(if is_default {
-                                Theme::global().ACCENT
-                            } else {
-                                Theme::global().TEXT_DIM
-                            })
-                            .hover(|el| el.bg(Theme::global().TOOL_BG))
-                            .on_mouse_down(
-                                gpui::MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
-                                    this.set_default_machine(default_host.clone(), cx);
-                                }),
-                            )
-                            .child(if is_default {
-                                "✓ Default"
-                            } else {
-                                "Set default"
-                            }),
-                    ),
+                    .child(if is_default { "Default" } else { "Set default" }),
+            )
+            .child(
+                div()
+                    .id(("machine-connect", index))
+                    .debug_selector(move || format!("machine-connect-{index}").into())
+                    .flex_none()
+                    .h(px(28.0))
+                    .px(px(12.0))
+                    .flex()
+                    .items_center()
+                    .rounded(px(8.0))
+                    .cursor_pointer()
+                    .text_size(px(12.0))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(theme.TEXT)
+                    .hover(|el| el.bg(theme.PANEL_BG))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            window.prevent_default();
+                            this.connect_machine(host.clone(), cx);
+                        }),
+                    )
+                    // A real runtime can attach the new local panel
+                    // between press and release. Do not let the old
+                    // Machines surface reclaim selection on mouse-up.
+                    .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| {
+                        cx.stop_propagation();
+                    })
+                    .child("Connect"),
             )
             .into_any_element()
     }

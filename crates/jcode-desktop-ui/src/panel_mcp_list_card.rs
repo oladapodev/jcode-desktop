@@ -138,9 +138,10 @@ fn pill(theme: &Theme, text: String) -> Div {
         .flex_none()
         .px_2()
         .rounded_full()
-        .bg(theme.INLINE_CODE_BG)
+        .bg(theme.USER_BG)
         .text_size(px(12.0))
         .line_height(px(20.0))
+        .font_family(theme.FONT_MONO)
         .text_color(theme.TEXT_DIM)
         .child(text)
 }
@@ -169,9 +170,9 @@ pub(super) fn render(
         .flex_row()
         .items_center()
         .gap_2()
-        .px_3()
-        .py_2()
-        .bg(theme.HEADER_BG)
+        .px_3p5()
+        .pt_2p5()
+        .pb_1()
         .child(crate::tool_icon::render_badge("mcp", true, false))
         .child(
             div()
@@ -179,20 +180,19 @@ pub(super) fn render(
                 .min_w_0()
                 .truncate()
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(theme.TOOL_TEXT)
+                .text_color(theme.TEXT)
                 .child("MCP servers"),
         )
         .child(
             div()
                 .flex_none()
                 .debug_selector(|| "mcp-list-summary".into())
+                .flex()
+                .gap_3()
                 .text_size(px(12.0))
                 .text_color(theme.TEXT_FAINT)
-                .child(format!(
-                    "{} connected · {}",
-                    view.servers.len(),
-                    plural(view.tool_count(), "tool")
-                )),
+                .child(format!("{} connected", view.servers.len()))
+                .child(plural(view.tool_count(), "tool")),
         )
         .when_some(tokens, |el, tokens| el.child(tokens));
 
@@ -208,7 +208,7 @@ pub(super) fn render(
             .flex()
             .flex_col()
             .gap_1()
-            .px_3()
+            .px_3p5()
             .py_1p5()
             .child(
                 div()
@@ -252,9 +252,10 @@ pub(super) fn render(
                                 pill(theme, format!("+{hidden} more"))
                                     .id(("mcp-list-more", index * 256 + n))
                                     .debug_selector(|| "mcp-list-more".into())
-                                    .text_color(theme.LINK)
+                                    .text_color(theme.TEXT)
+                                    .font_family(theme.FONT_UI)
                                     .cursor_pointer()
-                                    .hover(|style| style.bg(theme.ACCENT_MUTED))
+                                    .hover(|style| style.bg(theme.PANEL_BORDER_FOCUS))
                                     .on_click(move |event, window, cx| {
                                         on_toggle(event, window, cx)
                                     }),
@@ -269,10 +270,10 @@ pub(super) fn render(
         div()
             .id(("mcp-list-less", index))
             .debug_selector(|| "mcp-list-less".into())
-            .mx_3()
+            .mx_3p5()
             .mb_2()
             .text_size(px(12.0))
-            .text_color(theme.TEXT_DIM)
+            .text_color(theme.TEXT_FAINT)
             .cursor_pointer()
             .hover(|style| style.text_color(theme.TEXT))
             .on_click(move |event, window, cx| on_toggle(event, window, cx))
@@ -284,11 +285,12 @@ pub(super) fn render(
             .flex()
             .flex_col()
             .gap_1()
-            .px_3()
+            .px_3p5()
             .py_1p5()
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(px(11.5))
+                    .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.TEXT_FAINT)
                     .child("Configured, not connected"),
             )
@@ -299,7 +301,7 @@ pub(super) fn render(
                         if server.enabled {
                             server.name.clone()
                         } else {
-                            format!("{} · disabled", server.name)
+                            format!("{} (disabled)", server.name)
                         },
                     )
                 }),
@@ -314,15 +316,13 @@ pub(super) fn render(
         .flex_col()
         .max_w(px(720.0))
         .my_1()
-        .rounded_xl()
-        .border_1()
-        .border_color(theme.TOOL_BORDER)
-        .bg(theme.TOOL_BG)
+        .rounded(px(16.))
+        .bg(theme.CODE_BG)
         .overflow_hidden()
         .text_size(px(13.0))
         .line_height(px(20.0))
         .child(header)
-        .child(div().flex().flex_col().py_1().children(server_rows))
+        .child(div().flex().flex_col().pb_1().children(server_rows))
         .when_some(configured, |el, configured| el.child(configured))
         .when(expanded && expandable(view), |el| el.child(toggle_less))
         .into_any_element()

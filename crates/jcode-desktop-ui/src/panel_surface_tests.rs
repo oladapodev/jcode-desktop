@@ -51,7 +51,8 @@ fn folder_panels_share_a_level_body_without_individual_tabs(cx: &mut gpui::TestA
                     responsive::sidebar_width(true, responsive::is_compact(width))
                         + FOLDER_CONNECTOR_WIDTH
                 } else {
-                    0.0
+                    // The collapsed icon rail on wide windows, nothing on compact.
+                    responsive::sidebar_width(false, responsive::is_compact(width))
                 };
                 assert_eq!(canvas.left(), px(expected_left));
                 assert_eq!(canvas.right(), px(width - FOLDER_RIGHT_MARGIN));

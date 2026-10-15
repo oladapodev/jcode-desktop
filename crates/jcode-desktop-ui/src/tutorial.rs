@@ -13,27 +13,7 @@ type Lesson = (
 impl Workspace {
     pub(super) fn render_tutorial_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let selected = self.sidebar_view == SidebarView::Learn;
-        div()
-            .id("sidebar-learn-tab")
-            .debug_selector(|| "sidebar-learn-tab".into())
-            .flex_none()
-            .border_1()
-            .border_color(Theme::global().PANEL_BORDER)
-            .px_2()
-            .py_1()
-            .rounded_t_md()
-            .h(px(if selected { 34.0 } else { 30.0 }))
-            .flex()
-            .items_center()
-            .when(selected, |el| el.border_b_0().bg(Theme::global().HEADER_BG))
-            .cursor_pointer()
-            .text_size(px(11.0))
-            .text_color(if selected {
-                Theme::global().TEXT
-            } else {
-                Theme::global().TEXT_DIM
-            })
-            .hover(|el| el.bg(Theme::global().HEADER_BG))
+        responsive::sidebar_nav_item("sidebar-learn-tab", "Learn", selected)
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
@@ -41,7 +21,6 @@ impl Workspace {
                     cx.notify();
                 }),
             )
-            .child("learn")
             .into_any_element()
     }
 

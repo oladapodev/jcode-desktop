@@ -415,7 +415,7 @@ impl Panel {
                 div()
                     .debug_selector(move || format!("edit-preview-card-{index}").into())
                     .min_w_0()
-                    .rounded_lg()
+                    .rounded(px(14.))
                     .overflow_hidden()
                     .bg(Theme::global().CODE_BG)
                     .child(preview),

@@ -3,6 +3,14 @@ use super::*;
 
 const COMPACT_BREAKPOINT: f32 = 1100.0;
 pub(super) const SINGLE_PANEL_BREAKPOINT: f32 = 1100.0;
+/// A hidden sidebar on a wide window collapses to this icon rail.
+pub(super) const RAIL_WIDTH: f32 = 52.0;
+/// Flat sidebar navigation buttons (Normal layout).
+pub(super) const NAV_ITEM_HEIGHT: f32 = 26.0;
+
+const SHOW_SIDEBAR_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16M13.5 9.5 16 12l-2.5 2.5"/></g></svg>"#;
+const SESSIONS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></g></svg>"#;
+const SETTINGS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></g></svg>"#;
 
 pub(super) fn is_compact(width: f32) -> bool {
     width < COMPACT_BREAKPOINT
@@ -10,12 +18,82 @@ pub(super) fn is_compact(width: f32) -> bool {
 
 /// Compact windows reserve no sidebar column at all. Sessions get the full
 /// width, and the sidebar opens as an overlay from the tab row's menu button.
+/// A hidden sidebar on a wide window keeps a narrow icon rail.
 pub(super) fn sidebar_width(visible: bool, compact: bool) -> f32 {
-    if visible && !compact {
-        SIDEBAR_WIDTH
-    } else {
-        0.0
+    match (visible, compact) {
+        (_, true) => 0.0,
+        (true, false) => SIDEBAR_WIDTH,
+        (false, false) => RAIL_WIDTH,
     }
+}
+
+/// Whether the collapsed icon rail replaces the sidebar column.
+pub(super) fn shows_rail(visible: bool, compact: bool) -> bool {
+    !visible && !compact
+}
+
+/// One flat sidebar navigation button: the selected view gets a quiet fill,
+/// the rest stay text until hovered. No outlines, no browser-style tabs.
+pub(super) fn sidebar_nav_item(
+    id: impl Into<gpui::SharedString>,
+    label: &'static str,
+    selected: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let id: gpui::SharedString = id.into();
+    let selector = id.clone();
+    let theme = Theme::global();
+    div()
+        .id(id)
+        .debug_selector(move || selector.to_string())
+        .flex_none()
+        .h(px(NAV_ITEM_HEIGHT))
+        .px(px(9.0))
+        .flex()
+        .items_center()
+        .rounded(px(8.0))
+        .cursor_pointer()
+        .font_family(theme.FONT_UI)
+        .text_size(px(12.5))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(if selected { theme.TEXT } else { theme.TEXT_DIM })
+        .when(selected, |el| el.bg(theme.PANEL_BG))
+        .hover(|el| {
+            el.bg(Theme::global().PANEL_BG)
+                .text_color(Theme::global().TEXT)
+        })
+        .child(label)
+}
+
+fn rail_button(
+    id: &'static str,
+    tooltip: &'static str,
+    content: gpui::AnyElement,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .debug_selector(move || id.into())
+        .group(id)
+        .flex_none()
+        .size(px(36.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(10.0))
+        .cursor_pointer()
+        .occlude()
+        .hover(|el| el.bg(Theme::global().PANEL_BG))
+        .tooltip(move |_, cx| cx.new(|_| super::remotes::HeaderTooltip(tooltip.into())).into())
+        .child(content)
+}
+
+fn rail_icon(id: &'static str, data: &'static [u8], size: f32) -> gpui::AnyElement {
+    gpui::svg()
+        .data(data)
+        .size(px(size))
+        .flex_none()
+        .text_color(Theme::global().TEXT_DIM)
+        .group_hover(id, |el| el.text_color(Theme::global().TEXT))
+        .into_any_element()
 }
 
 /// Drawer dismissal is immediate: retaining sidebar controls would intercept
@@ -46,9 +124,178 @@ impl Workspace {
         cx.notify();
     }
 
-    /// The only compact sidebar affordance: a pill in the tab row where the
-    /// FPS readout normally sits. Workspaces stay reachable through the
-    /// numbered tab groups, so no extra column is spent on them.
+    /// Reveal the full sidebar on a chosen view, from the collapsed rail.
+    fn expand_sidebar_to(&mut self, view: Option<SidebarView>, cx: &mut Context<Self>) {
+        self.show_sidebar = true;
+        self.compact_sidebar_open = false;
+        if let Some(view) = view {
+            self.sidebar_view = view;
+        }
+        cx.notify();
+    }
+
+    /// The collapsed sidebar: a quiet column of icon buttons. Everything the
+    /// full sidebar offers stays one click away, each with a tooltip.
+    pub(super) fn render_sidebar_rail(
+        &self,
+        fullscreen: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = Theme::global();
+        let folders = self.layout_mode == crate::config::LayoutMode::FolderTabs;
+        let account = super::sidebar_account::JcodeAccount::current();
+        let signed_in = account.signed_in;
+        let initial = account
+            .email
+            .as_deref()
+            .filter(|_| signed_in && super::sidebar_account::show_email())
+            .and_then(|email| email.chars().next())
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_else(|| "J".into());
+        let shortcut = |mac: &'static str, other: &'static str| {
+            if cfg!(target_os = "macos") { mac } else { other }
+        };
+        div()
+            .id("sidebar-rail")
+            .debug_selector(|| "sidebar-rail".into())
+            .w(px(RAIL_WIDTH))
+            .h_full()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(4.0))
+            // Clear the macOS traffic lights, which sit over this column.
+            .pt(px(content_top_inset(false, fullscreen) + 6.0))
+            .pb(px(10.0))
+            .when(!folders, |el| el.bg(theme.HEADER_BG))
+            // The tab row's show-sidebar button sits right beside this rail,
+            // so the rail starts with the primary action instead of repeating it.
+            .child(
+                rail_button(
+                    "sidebar-rail-new-session",
+                    shortcut("New session  ⌘N", "New session  Super N"),
+                    rail_icon(
+                        "sidebar-rail-new-session",
+                        super::sidebar_worktrees::NEW_SESSION_ICON,
+                        15.0,
+                    ),
+                )
+                .bg(theme.PANEL_BG)
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _, window, cx| {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        this.missed("new_panel", cx);
+                        this.open_new_session(cx);
+                    }),
+                ),
+            )
+            .child(div().h(px(8.0)))
+            .child(
+                rail_button(
+                    "sidebar-rail-sessions",
+                    "Sessions",
+                    rail_icon("sidebar-rail-sessions", SESSIONS_ICON, 16.0),
+                )
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _, window, cx| {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        this.expand_sidebar_to(Some(SidebarView::Sessions), cx);
+                    }),
+                ),
+            )
+            .child(
+                rail_button(
+                    "sidebar-rail-files",
+                    "Files",
+                    rail_icon("sidebar-rail-files", super::sidebar_worktrees::FOLDER_ICON, 16.0),
+                )
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _, window, cx| {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        this.expand_sidebar_to(Some(SidebarView::Files), cx);
+                    }),
+                ),
+            )
+            .child(div().flex_1())
+            .child(
+                rail_button(
+                    "sidebar-rail-settings",
+                    "Settings",
+                    rail_icon("sidebar-rail-settings", SETTINGS_ICON, 16.0),
+                )
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _, window, cx| {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        this.expand_sidebar_to(Some(SidebarView::Settings), cx);
+                    }),
+                ),
+            )
+            .child(
+                rail_button(
+                    "sidebar-rail-account",
+                    if signed_in { "Jcode account" } else { "Sign in to Jcode" },
+                    div()
+                        .size(px(28.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .bg(if signed_in { theme.ACCENT_DIM } else { theme.PANEL_BG })
+                        .font_family(theme.FONT_UI)
+                        .text_size(px(12.0))
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(if signed_in { theme.TEXT } else { theme.TEXT_DIM })
+                        .child(initial)
+                        .into_any_element(),
+                )
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |this, _, window, cx| {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        if signed_in {
+                            // The account menu lives in the sidebar footer.
+                            this.expand_sidebar_to(None, cx);
+                            if !this.account_menu.open {
+                                this.toggle_account_menu(cx);
+                            }
+                            return;
+                        }
+                        // Same path as the sidebar footer's sign-in row.
+                        let source = this
+                            .slots
+                            .get(this.active)
+                            .filter(|slot| !slot.closing)
+                            .map(|slot| slot.panel.entity_id());
+                        match source {
+                            Some(source) => this.open_accounts(
+                                &OpenAccounts {
+                                    source,
+                                    login_command: Some("/login jcode".into()),
+                                },
+                                window,
+                                cx,
+                            ),
+                            None => this.open_account_sign_in(window, cx),
+                        }
+                    }),
+                ),
+            )
+            .into_any_element()
+    }
+
+    /// The only compact sidebar affordance: a quiet button in the tab row
+    /// where the connection status normally sits. Workspaces stay reachable
+    /// through the numbered tab groups, so no extra column is spent on them.
     pub(super) fn render_compact_menu_button(
         &self,
         left: f32,
@@ -57,6 +304,7 @@ impl Workspace {
         div()
             .id("compact-sidebar-toggle")
             .debug_selector(|| "compact-sidebar-toggle".into())
+            .group("compact-sidebar-toggle")
             .absolute()
             .left(px(left + 4.0))
             .top_0()
@@ -64,10 +312,8 @@ impl Workspace {
             .flex()
             .items_center()
             .justify_center()
-            .rounded_full()
+            .rounded(px(8.0))
             .cursor_pointer()
-            .text_size(px(15.0))
-            .text_color(Theme::global().TEXT_DIM)
             .occlude()
             .tooltip(|_, cx| {
                 cx.new(|_| super::remotes::HeaderTooltip("Show sidebar (Ctrl+B)".into()))
@@ -94,7 +340,7 @@ impl Workspace {
                     cx.notify();
                 }),
             )
-            .child("☰")
+            .child(rail_icon("compact-sidebar-toggle", SHOW_SIDEBAR_ICON, 16.0))
             .into_any_element()
     }
 
@@ -270,9 +516,12 @@ mod tests {
             assert!(!w.show_sidebar);
             assert!(!w.compact_sidebar_open);
         });
+        // Wide windows keep the collapsed icon rail, and give the rest back.
+        let rail = vcx.debug_bounds("sidebar-rail").unwrap();
+        assert_eq!(rail.size.width, px(RAIL_WIDTH));
         assert_eq!(
             vcx.debug_bounds("workspace-canvas").unwrap().left(),
-            px(0.0)
+            rail.right()
         );
         vcx.simulate_keystrokes("super-b");
         vcx.run_until_parked();

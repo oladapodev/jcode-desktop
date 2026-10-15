@@ -10,8 +10,8 @@ impl Render for TaskTooltip {
         div()
             .max_w(px(420.0))
             .p_2()
-            .rounded_md()
-            .bg(Theme::global().HEADER_BG)
+            .rounded(px(10.))
+            .bg(Theme::global().popover_background())
             .text_size(px(12.0))
             .text_color(Theme::global().TEXT)
             .child(self.0.clone())
@@ -52,12 +52,12 @@ pub(super) fn render(
         .min_w_0()
         .h(px(24.0))
         .px_1()
-        .text_size(px(11.0))
+        .text_size(px(12.0))
         .tooltip(move |_, cx| cx.new(|_| TaskTooltip(details.clone())).into())
         .child(
             div()
                 .flex_none()
-                .text_color(if done { theme.OK } else { theme.WARN })
+                .text_color(if done { theme.OK } else { theme.ACCENT })
                 .child(if done { "✓" } else { "●" }),
         )
         .child(
@@ -65,7 +65,7 @@ pub(super) fn render(
                 .max_w(relative(0.4))
                 .min_w_0()
                 .truncate()
-                .text_color(theme.TOOL_TEXT)
+                .text_color(theme.TEXT_DIM)
                 .child(text_selection::plain(
                     selection.clone(),
                     format!("background-label-{index}"),
@@ -79,7 +79,7 @@ pub(super) fn render(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_color(theme.TEXT_DIM)
+                .text_color(theme.TEXT_FAINT)
                 .child(text_selection::plain(
                     selection.clone(),
                     format!("background-summary-{index}"),
@@ -132,6 +132,7 @@ fn completed_card(
     cx: &App,
 ) -> impl IntoElement {
     let theme = Theme::global();
+    let detail = format!("Background task {task_id}");
     div()
         .id(("background-task", index))
         .debug_selector(|| "background-task-card".into())
@@ -139,12 +140,13 @@ fn completed_card(
         .flex_none()
         .flex_col()
         .min_w_0()
-        .rounded_lg()
+        .rounded(px(14.))
         .overflow_hidden()
         .bg(theme.CODE_BG)
-        .px_3()
-        .py_2()
-        .gap_1()
+        .px_3p5()
+        .py_2p5()
+        .gap_0p5()
+        .tooltip(move |_, cx| cx.new(|_| TaskTooltip(detail.clone())).into())
         .child(
             div()
                 .debug_selector(|| "background-task-completed".into())
@@ -156,9 +158,9 @@ fn completed_card(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .text_size(px(13.0))
+                        .text_size(px(12.5))
                         .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.TOOL_TEXT)
+                        .text_color(theme.TEXT)
                         .child(text_selection::plain(
                             selection.clone(),
                             format!("background-label-{index}"),
@@ -170,7 +172,8 @@ fn completed_card(
         )
         .child(
             div()
-                .text_size(px(11.0))
+                .pl(px(22.))
+                .text_size(px(12.0))
                 .text_color(completion_color(summary))
                 .child(text_selection::plain(
                     selection.clone(),
@@ -179,13 +182,6 @@ fn completed_card(
                     window,
                     cx,
                 )),
-        )
-        .child(
-            div()
-                .text_size(px(10.0))
-                .font_family(theme.FONT_UI)
-                .text_color(theme.TEXT_FAINT)
-                .child(format!("Background task · {task_id}")),
         )
 }
 

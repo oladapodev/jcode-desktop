@@ -1259,16 +1259,18 @@ fn code_block_with_selection(
     let show_header = !lang.is_empty() || line_count > 1;
     let copy_body = body.to_string();
     let copy_id: SharedString = format!("md-copy-{:x}", hash(body)).into();
+    let group: SharedString = format!("md-code-{:x}", hash(body)).into();
 
+    // A flat code surface: no outline and no separate header strip. The
+    // language sits quietly above the code and copy brightens on hover.
     div()
+        .group(group.clone())
         .flex()
         .flex_col()
         .my_1()
         .w_full()
         .overflow_hidden()
-        .rounded_md()
-        .border_1()
-        .border_color(Theme::global().CODE_BORDER)
+        .rounded(px(14.))
         .bg(Theme::global().CODE_BG)
         .when(show_header, |el| {
             el.child(
@@ -1277,13 +1279,12 @@ fn code_block_with_selection(
                     .flex_row()
                     .items_center()
                     .justify_between()
-                    .px_2p5()
-                    .py_1()
-                    .bg(Theme::global().CODE_HEADER_BG)
-                    .border_b_1()
-                    .border_color(Theme::global().CODE_BORDER)
-                    .text_size(px(10.5))
-                    .text_color(Theme::global().TEXT_DIM)
+                    .gap_2()
+                    .pl_4()
+                    .pr_2()
+                    .pt_1p5()
+                    .text_size(px(11.5))
+                    .text_color(Theme::global().TEXT_FAINT)
                     .font_family(Theme::global().FONT_MONO)
                     .child(if lang.is_empty() {
                         "code".to_string()
@@ -1292,31 +1293,26 @@ fn code_block_with_selection(
                     })
                     .child(
                         div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap_2()
-                            .child(format!(
-                                "{line_count} line{}",
-                                if line_count == 1 { "" } else { "s" }
-                            ))
-                            .child(
-                                div()
-                                    .id(copy_id)
-                                    .debug_selector(|| "code-copy".into())
-                                    .cursor_pointer()
-                                    .text_color(Theme::global().TEXT_FAINT)
-                                    .hover(|el| el.text_color(Theme::global().TEXT))
-                                    .on_mouse_down(
-                                        gpui::MouseButton::Left,
-                                        move |_event, _window, cx| {
-                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                                copy_body.clone(),
-                                            ));
-                                        },
-                                    )
-                                    .child("copy"),
-                            ),
+                            .id(copy_id)
+                            .debug_selector(|| "code-copy".into())
+                            .px_2()
+                            .py_0p5()
+                            .rounded(px(8.))
+                            .cursor_pointer()
+                            .font_family(Theme::global().FONT_UI)
+                            .text_color(Theme::global().TEXT_FAINT)
+                            .opacity(0.55)
+                            .group_hover(group, |el| el.opacity(1.0))
+                            .hover(|el| {
+                                el.text_color(Theme::global().TEXT)
+                                    .bg(Theme::global().TOOL_BG)
+                            })
+                            .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, cx| {
+                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                    copy_body.clone(),
+                                ));
+                            })
+                            .child("Copy"),
                     ),
             )
         })
@@ -1324,9 +1320,11 @@ fn code_block_with_selection(
             div()
                 .flex()
                 .flex_row()
-                .px_2()
-                .py_1p5()
-                .gap_2p5()
+                .pl_4()
+                .pr_3()
+                .pt(px(if show_header { 4. } else { 10. }))
+                .pb(px(10.))
+                .gap_3()
                 .when(line_count > 1, |el| {
                     el.child(
                         div()
@@ -1903,8 +1901,8 @@ fn render_document_with_prompt_background(
             Block::Heading(level, text) => {
                 let (size, weight) = match level {
                     _ if reasoning => (px(16.5), FontWeight::SEMIBOLD),
-                    1 => (px(19.0), FontWeight::BOLD),
-                    2 => (px(16.5), FontWeight::BOLD),
+                    1 => (px(19.0), FontWeight::SEMIBOLD),
+                    2 => (px(16.5), FontWeight::SEMIBOLD),
                     3 => (px(14.5), FontWeight::SEMIBOLD),
                     _ => (px(13.5), FontWeight::SEMIBOLD),
                 };
@@ -1926,9 +1924,6 @@ fn render_document_with_prompt_background(
                             .line_height(relative(1.35))
                             .child(inline_text(&text)),
                     )
-                    .when(!reasoning && level <= 2, |el| {
-                        el.child(div().h(px(1.0)).w_full().bg(Theme::global().PANEL_BORDER))
-                    })
                     .into_any_element()
             }
             Block::Reasoning(text) => div()
@@ -2009,17 +2004,15 @@ fn render_document_with_prompt_background(
                 .flex()
                 .flex_col()
                 .my_1()
-                .border_l_2()
-                .border_color(Theme::global().PANEL_BORDER)
                 .bg(Theme::global().QUOTE_BG)
-                .rounded_r_md()
+                .rounded(px(12.))
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_1()
-                        .px_2p5()
-                        .py_1()
+                        .px_3p5()
+                        .py_2()
                         .flex_1()
                         .min_w_0()
                         .text_color(Theme::global().TEXT_DIM)
@@ -2186,19 +2179,15 @@ fn table(
         .my_1()
         .w_full()
         .overflow_hidden()
-        .rounded_md()
-        .border_1()
-        .border_color(Theme::global().PANEL_BORDER)
+        .rounded(px(12.))
+        .bg(Theme::global().TOOL_BG)
         .text_size(px(12.5))
         .child(
             div()
                 .flex()
                 .flex_row()
-                .bg(Theme::global().CODE_HEADER_BG)
-                .border_b_1()
-                .border_color(Theme::global().PANEL_BORDER)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(Theme::global().HEADING)
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(Theme::global().TEXT_DIM)
                 .children((0..columns).map(|index| {
                     cell(
                         header.get(index).map(String::as_str).unwrap_or(""),

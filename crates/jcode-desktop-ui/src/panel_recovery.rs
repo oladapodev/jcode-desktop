@@ -125,19 +125,34 @@ pub(super) fn copy_pill(
 }
 
 fn action_pill(id: &'static str, index: usize, label: &'static str) -> gpui::Stateful<gpui::Div> {
+    // A small flat button: text only until hovered, so the actions never
+    // compete with the message itself.
     div()
         .id((id, index))
         .debug_selector(move || id.into())
         .flex_none()
-        .px_2p5()
-        .py(px(2.))
-        .rounded_full()
-        .bg(Theme::global().ACCENT_DIM)
-        .text_size(px(11.))
-        .text_color(Theme::global().TEXT)
+        .px_2()
+        .py(px(3.))
+        .rounded(px(8.))
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(Theme::global().TEXT_DIM)
         .cursor_pointer()
-        .hover(|el| el.opacity(0.8))
+        .hover(|el| {
+            el.bg(Theme::global().USER_BG)
+                .text_color(Theme::global().TEXT)
+        })
         .child(label)
+}
+
+/// A short title for a real error. The full message stays in the body.
+fn recovery_title(kind: RecoveryKind) -> &'static str {
+    match kind {
+        RecoveryKind::Auth => "Sign-in needed",
+        RecoveryKind::Model => "Model unavailable",
+        RecoveryKind::Quota => "Usage limit reached",
+        RecoveryKind::Other => "Something went wrong",
+    }
 }
 
 impl Panel {
@@ -237,31 +252,69 @@ impl Panel {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        self.render_recovery_card(index, None, message, None, window, cx)
+    }
+
+    /// The one card for real errors: a tinted fill, a short title, the
+    /// readable message, then small flat actions.
+    pub(super) fn render_recovery_card(
+        &self,
+        index: usize,
+        title: Option<&str>,
+        message: &str,
+        footnote: Option<String>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let kind = recovery_kind(message);
         let details = message.to_string();
+        // A recognised cause names the problem better than a generic stop title.
+        let title = match (title, kind) {
+            (Some(title), RecoveryKind::Other) => title.to_owned(),
+            _ => recovery_title(kind).to_owned(),
+        };
         div()
             .debug_selector(|| "recovery-error".into())
             .flex()
             .flex_col()
-            .gap_2()
-            .px_3()
-            .py_2()
-            .rounded_xl()
+            .gap_1()
+            .pl_3p5()
+            .pr_2()
+            .pt_2p5()
+            .pb_2()
+            .rounded(px(14.))
             .bg(Theme::global().ERROR_BG)
-            .text_size(px(12.))
-            .text_color(Theme::global().ERROR)
-            .child(text_selection::plain(
+            .text_size(px(12.5))
+            .line_height(relative(1.5))
+            .text_color(Theme::global().TEXT_DIM)
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(Theme::global().ERROR)
+                    .child(title),
+            )
+            .child(div().pr_1p5().child(text_selection::plain(
                 self.transcript_selection.clone(),
                 format!("{index}-error"),
                 native_error_message(message),
                 window,
                 cx,
-            ))
+            )))
+            .when_some(footnote, |el, footnote| {
+                el.child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(Theme::global().TEXT_FAINT)
+                        .child(footnote),
+                )
+            })
             .child(
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap_1p5()
+                    .gap_0p5()
+                    .mt_0p5()
+                    .ml(px(-8.))
                     .child(copy_pill("recovery-copy", index, details))
                     .when(kind != RecoveryKind::Other, |el| {
                         el.child(

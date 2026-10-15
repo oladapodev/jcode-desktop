@@ -72,7 +72,7 @@ fn fps_and_new_session_share_the_tab_row_without_a_top_header(cx: &mut gpui::Tes
                     if let Some(version) = vcx.debug_bounds("workspace-version") {
                         assert!(version.left() >= row.left());
                         assert!(version.right() <= counter.left());
-                        assert_eq!(version.size.height, px(18.0));
+                        assert_eq!(version.size.height, px(super::version::PILL_HEIGHT));
                         assert!(version.top() >= row.top() && version.bottom() <= row.bottom());
                         let build = vcx.debug_bounds("workspace-build").unwrap();
                         assert!(

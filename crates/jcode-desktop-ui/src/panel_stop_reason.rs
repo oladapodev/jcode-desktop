@@ -157,53 +157,55 @@ impl Panel {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let compact = crate::config::display().compact_notifications;
+        let provider = notice
+            .provider_stop_reason
+            .as_ref()
+            .map(|reason| format!("Provider stop reason: {reason}"));
+        // Real failures are one tinted error card. Everything else (a stop
+        // the user asked for, a reconnect) is not an error: a quiet line.
+        if notice.failure {
+            return div()
+                .debug_selector(|| "response-stop-notice".into())
+                .child(self.render_recovery_card(
+                    index,
+                    Some(&notice.title),
+                    &notice.detail,
+                    provider,
+                    window,
+                    cx,
+                ))
+                .into_any_element();
+        }
+        let copy = notice.raw.clone().unwrap_or_else(|| notice.detail.clone());
         div()
             .debug_selector(|| "response-stop-notice".into())
             .flex()
-            .flex_col()
-            .map(|el| {
-                if compact {
-                    el.gap_0().px_2().py_1()
-                } else {
-                    el.gap_1().px_3().py_2()
-                }
-            })
-            .rounded_xl()
-            .bg(Theme::global().HEADER_BG)
-            .text_size(px(if compact { 11. } else { 12. }))
-            .text_color(Theme::global().TEXT_DIM)
+            .flex_row()
+            .flex_wrap()
+            .items_center()
+            .gap_x_2()
+            .gap_y_0p5()
+            .px_1()
+            .when(!compact, |el| el.py_0p5())
+            .text_size(px(if compact { 11.5 } else { 12. }))
+            .line_height(relative(1.5))
+            .text_color(Theme::global().TEXT_FAINT)
             .child(
                 div()
+                    .flex_none()
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(Theme::global().TEXT)
+                    .text_color(Theme::global().TEXT_DIM)
                     .child(notice.title.clone()),
             )
-            .when(notice.failure, |el| {
-                el.child(self.render_recovery_error(index, &notice.detail, window, cx))
-            })
-            .when(!notice.failure, |el| {
-                let copy = notice.raw.clone().unwrap_or_else(|| notice.detail.clone());
-                el.child(
-                    div()
-                        .flex()
-                        .items_start()
-                        .gap_2()
-                        .child(div().flex_1().min_w_0().child(text_selection::plain(
-                            self.transcript_selection.clone(),
-                            format!("{index}-stop-reason"),
-                            notice.detail.clone(),
-                            window,
-                            cx,
-                        )))
-                        .child(super::recovery::copy_pill("stop-notice-copy", index, copy)),
-                )
-            })
-            .children(
-                notice
-                    .provider_stop_reason
-                    .as_ref()
-                    .map(|reason| div().child(format!("Provider stop reason: {reason}"))),
-            )
+            .child(div().flex_1().min_w(px(120.)).child(text_selection::plain(
+                self.transcript_selection.clone(),
+                format!("{index}-stop-reason"),
+                notice.detail.clone(),
+                window,
+                cx,
+            )))
+            .child(super::recovery::copy_pill("stop-notice-copy", index, copy))
+            .children(provider.map(|reason| div().w_full().child(reason)))
             .into_any_element()
     }
 }

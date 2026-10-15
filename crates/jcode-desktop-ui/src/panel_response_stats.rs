@@ -137,11 +137,10 @@ impl Render for StatsTooltip {
             .px_3()
             .py_2()
             .max_w(px(380.))
-            .rounded_md()
-            .bg(Theme::global().HEADER_BG)
-            .border_1()
-            .border_color(Theme::global().PANEL_BORDER)
-            .text_size(px(11.))
+            .rounded(px(10.))
+            .bg(Theme::global().popover_background())
+            .text_size(px(11.5))
+            .line_height(relative(1.45))
             .text_color(Theme::global().TEXT_DIM)
             .child(self.0.clone())
     }
@@ -199,21 +198,20 @@ impl ResponseStats {
             .flex()
             .flex_wrap()
             .items_center()
-            .gap_x_2()
+            .gap_x_3()
             .gap_y_1()
             .px_1()
             .py_1()
             .font_family(Theme::global().FONT_UI)
-            .text_size(px(10.))
-            .text_color(Theme::global().TEXT_DIM)
+            .text_size(px(11.))
+            .text_color(Theme::global().TEXT_FAINT)
             .tooltip(move |_, cx| cx.new(|_| StatsTooltip(detail.clone())).into())
-            .children(self.labels().into_iter().enumerate().map(|(index, label)| {
-                div().flex_none().child(if index == 0 {
-                    label
-                } else {
-                    format!("· {label}")
-                })
-            }))
+            // Spacing separates the figures. No middle-dot clutter.
+            .children(
+                self.labels()
+                    .into_iter()
+                    .map(|label| div().flex_none().child(label)),
+            )
     }
 }
 

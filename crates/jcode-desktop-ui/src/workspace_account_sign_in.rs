@@ -955,29 +955,25 @@ impl Workspace {
         div()
             .flex()
             .flex_col()
-            .gap_2()
-            .py_3()
-            .child(div().text_size(px(12.0)).child("Jcode account"))
+            .gap(px(2.0))
+            .child(super::settings_rows::section_label("Jcode account"))
             .child(
-                div()
-                    .text_color(Theme::global().TEXT_DIM)
-                    .child(if connected {
+                super::settings_rows::with_tooltip(
+                    super::settings_rows::row(
+                        "settings-account-sign-in",
+                        if connected {
+                            "Manage account"
+                        } else {
+                            "Sign in with email"
+                        },
+                    ),
+                    if connected {
                         "Account saved on this computer"
                     } else {
-                        "Optional · Separate from your AI providers"
-                    }),
-            )
-            .child(
-                account_button(
-                    "settings-account-sign-in",
-                    if connected {
-                        "Manage account"
-                    } else {
-                        "Sign in with email"
+                        "Optional. Separate from your AI providers."
                     },
-                    false,
-                    false,
                 )
+                .child(super::settings_rows::chevron())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     if connected {
                         if !this.account_menu.open {

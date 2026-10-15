@@ -332,21 +332,25 @@ impl DiffView {
         } else {
             label.into()
         };
+        // Small flat buttons: no outline, a quiet fill only when active or
+        // hovered. Colour stays reserved for status.
         div()
             .id(SharedString::from(id.clone()))
             .debug_selector(move || selector.clone())
+            .flex_none()
             .px_2()
-            .py_1()
-            .rounded_sm()
+            .py_0p5()
+            .rounded(px(8.))
             .cursor_pointer()
+            .text_size(px(12.))
             .text_color(if active {
                 Theme::global().TEXT
             } else {
-                Theme::global().TEXT_DIM
+                Theme::global().TEXT_FAINT
             })
-            .when(active, |el| el.bg(Theme::global().ACCENT_DIM))
+            .when(active, |el| el.bg(Theme::global().USER_BG))
             .hover(|el| {
-                el.bg(Theme::global().HEADER_BG)
+                el.bg(Theme::global().USER_BG)
                     .text_color(Theme::global().TEXT)
             })
             .on_mouse_down(
@@ -401,7 +405,7 @@ impl DiffView {
                 overlays.push((
                     range.clone(),
                     HighlightStyle {
-                        background_color: Some(to_hsla(color).opacity(0.28)),
+                        background_color: Some(to_hsla(color).opacity(0.22)),
                         ..Default::default()
                     },
                 ));
@@ -437,9 +441,9 @@ impl DiffView {
             .flex_1()
             .min_w_0()
             .min_h(px(CODE_LINE_HEIGHT))
-            .when_some(tint, |el, color| el.bg(to_hsla(color).opacity(0.09)))
+            .when_some(tint, |el, color| el.bg(to_hsla(color).opacity(0.08)))
             .when(line.kind == LineKind::Meta, |el| {
-                el.text_color(theme.TEXT_DIM)
+                el.text_color(theme.TEXT_FAINT)
             })
             .when(!self.split || side == "old", |el| {
                 el.child(number(line.old_line, "old"))
@@ -462,7 +466,7 @@ impl DiffView {
                     .child(div().when(!self.wrap, |el| el.whitespace_nowrap()).child(text))
                     .when(clipped, |el| el.child(div()
                         .debug_selector(move || notice_selector.clone())
-                        .py_1().text_size(px(10.)).text_color(theme.TEXT_DIM)
+                        .py_1().text_size(px(11.)).text_color(theme.TEXT_FAINT)
                         .child("Long line preview: first 4096 characters. Copy diff retains the full line."))),
             )
             .into_any_element()
@@ -487,36 +491,39 @@ impl DiffView {
             + px(4.))
         .max(px(34.));
         let selector = format!("diff-file-{index}");
+        let group: SharedString = format!("diff-file-group-{index}").into();
+        // The directory reads faint and the file name normal, like the
+        // prototype's change summary rows.
+        let (dir, name) = match file.path.rfind('/') {
+            Some(split) => (file.path[..=split].to_owned(), file.path[split + 1..].to_owned()),
+            None => (String::new(), file.path.clone()),
+        };
         let mut card = div()
             .debug_selector(move || selector.clone())
+            .group(group.clone())
             .w_full()
             .min_w_0()
             .overflow_hidden()
-            .rounded_md()
-            .border_1()
-            .border_color(theme.CODE_BORDER)
+            .rounded(px(14.))
             .bg(theme.CODE_BG)
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .p_1()
-                    .gap_1()
-                    .bg(theme.CODE_HEADER_BG)
+                    .px_1p5()
+                    .pt_1p5()
+                    .pb_1()
                     .child(
                         div()
                             .flex()
                             .flex_row()
-                            .flex_wrap()
                             .items_center()
                             .gap_1()
+                            .rounded(px(10.))
+                            .hover(|el| el.bg(theme.TOOL_BG))
                             .child(self.control(
                                 format!("diff-collapse-{index}"),
-                                if state.collapsed {
-                                    "▸ Expand"
-                                } else {
-                                    "▾ Collapse"
-                                },
+                                if state.collapsed { "▸" } else { "▾" },
                                 false,
                                 Control::Collapse(index),
                                 cx,
@@ -525,44 +532,65 @@ impl DiffView {
                                 div()
                                     .min_w_0()
                                     .flex_1()
+                                    .truncate()
                                     .font_family(theme.FONT_MONO)
+                                    .text_size(px(12.5))
                                     .text_color(theme.TEXT)
-                                    .child(file.path.clone()),
+                                    .child(
+                                        gpui::StyledText::new(format!("{dir}{name}"))
+                                            .with_highlights([(
+                                                0..dir.len(),
+                                                HighlightStyle {
+                                                    color: Some(to_hsla(theme.TEXT_FAINT)),
+                                                    ..Default::default()
+                                                },
+                                            )]),
+                                    ),
                             )
-                            .child(div().text_color(theme.TEXT_DIM).child(file.kind.clone()))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .gap_0p5()
+                                    .opacity(0.6)
+                                    .group_hover(group, |el| el.opacity(1.0))
+                                    .when(self.files.len() > 1, |el| {
+                                        el.child(self.control(
+                                            format!("diff-copy-file-{index}"),
+                                            "Copy diff",
+                                            false,
+                                            Control::CopyDiff(Some(index)),
+                                            cx,
+                                        ))
+                                    })
+                                    .child(self.control(
+                                        format!("diff-copy-path-{index}"),
+                                        "Copy path",
+                                        false,
+                                        Control::CopyPath(index),
+                                        cx,
+                                    )),
+                            )
+                            .when(!matches!(file.kind.as_str(), "Edit" | "Modified"), |el| {
+                                el.child(
+                                    div()
+                                        .flex_none()
+                                        .text_size(px(11.5))
+                                        .text_color(theme.TEXT_FAINT)
+                                        .child(file.kind.clone()),
+                                )
+                            })
                             .child(stats(state.counts)),
                     )
                     .when_some(file.previous_path.as_ref(), |el, old| {
                         el.child(
                             div()
                                 .px_2()
-                                .text_color(theme.TEXT_DIM)
+                                .text_size(px(11.5))
+                                .text_color(theme.TEXT_FAINT)
                                 .child(format!("From {old}")),
                         )
-                    })
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .flex_wrap()
-                            .gap_1()
-                            .when(self.files.len() > 1, |el| {
-                                el.child(self.control(
-                                    format!("diff-copy-file-{index}"),
-                                    "Copy diff",
-                                    false,
-                                    Control::CopyDiff(Some(index)),
-                                    cx,
-                                ))
-                            })
-                            .child(self.control(
-                                format!("diff-copy-path-{index}"),
-                                "Copy path",
-                                false,
-                                Control::CopyPath(index),
-                                cx,
-                            )),
-                    ),
+                    }),
             );
         if state.collapsed {
             return card.into_any_element();
@@ -570,9 +598,10 @@ impl DiffView {
         if let Some(note) = &file.note {
             card = card.child(
                 div()
-                    .px_2()
+                    .px_3()
                     .py_1()
-                    .text_color(theme.TEXT_DIM)
+                    .text_size(px(11.5))
+                    .text_color(theme.TEXT_FAINT)
                     .child(note.clone()),
             );
         }
@@ -586,8 +615,7 @@ impl DiffView {
                     .flex_wrap()
                     .items_center()
                     .gap_1()
-                    .border_b_1()
-                    .border_color(theme.CODE_BORDER)
+                    .px_1p5()
                     .when(state.page > 0, |el| {
                         el.child(self.control(
                             format!("diff-prev-{index}"),
@@ -600,7 +628,7 @@ impl DiffView {
                             cx,
                         ))
                     })
-                    .child(div().px_2().text_color(theme.TEXT_DIM).child(format!(
+                    .child(div().px_2().text_color(theme.TEXT_FAINT).child(format!(
                         "Rows {}–{} of {}",
                         start + 1,
                         end,
@@ -625,9 +653,10 @@ impl DiffView {
                 div()
                     .flex()
                     .flex_row()
-                    .text_color(theme.TEXT_DIM)
-                    .child(div().flex_1().px_2().child("Old"))
-                    .child(div().flex_1().px_2().child("New")),
+                    .text_size(px(11.5))
+                    .text_color(theme.TEXT_FAINT)
+                    .child(div().flex_1().px_3().child("Old"))
+                    .child(div().flex_1().px_3().child("New")),
             );
         }
         // Give the scroll viewport a genuinely wide child. Text overflow alone
@@ -667,10 +696,11 @@ impl DiffView {
             body =
                 body.child(match row {
                     Row::Header(hunk) => div()
-                        .px_2()
-                        .py_1()
-                        .bg(theme.CODE_HEADER_BG)
-                        .text_color(theme.TEXT_DIM)
+                        .px_3()
+                        .pt_1()
+                        .pb_0p5()
+                        .text_size(px(11.5))
+                        .text_color(theme.TEXT_FAINT)
                         .child(file.hunks[*hunk].header.clone())
                         .into_any_element(),
                     Row::Fold { hunk, start, end } => self.control(
@@ -696,8 +726,6 @@ impl DiffView {
                                         .w(relative(0.5))
                                         .min_w_0()
                                         .flex()
-                                        .border_r_1()
-                                        .border_color(theme.CODE_BORDER)
                                         .child(self.line_cell(
                                             index,
                                             *hunk,
@@ -723,6 +751,7 @@ impl DiffView {
                 .debug_selector(move || format!("diff-scroll-{index}"))
                 .w_full()
                 .min_w_0()
+                .pb_2()
                 .when(!self.wrap, |el| el.overflow_x_scroll())
                 .child(body),
         )
@@ -774,8 +803,11 @@ fn stats((added, removed): (usize, usize)) -> AnyElement {
     div()
         .flex()
         .flex_row()
-        .gap_2()
-        .px_1()
+        .flex_none()
+        .gap_1p5()
+        .px_1p5()
+        .font_family(Theme::global().FONT_MONO)
+        .text_size(px(11.5))
         .child(
             div()
                 .text_color(Theme::global().OK)
@@ -807,7 +839,7 @@ impl Render for DiffView {
             .w_full()
             .min_w_0()
             .gap_2()
-            .text_size(px(11.))
+            .text_size(px(12.))
             .text_color(Theme::global().TEXT)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
@@ -815,11 +847,15 @@ impl Render for DiffView {
                     .flex()
                     .flex_row()
                     .flex_wrap()
-                    .gap_2()
+                    .gap_x_2()
+                    .gap_y_1()
                     .items_center()
+                    .px_1()
                     .child(
                         div()
                             .debug_selector(|| "diff-status".into())
+                            .text_size(px(13.))
+                            .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(if self.failed {
                                 Theme::global().ERROR
                             } else {
@@ -827,45 +863,48 @@ impl Render for DiffView {
                             })
                             .child(self.status()),
                     )
-                    .child(format!(
+                    .child(div().text_color(Theme::global().TEXT_FAINT).child(format!(
                         "{} file{}",
                         self.files.len(),
                         if self.files.len() == 1 { "" } else { "s" }
-                    ))
-                    .child(stats(self.counts)),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .flex_wrap()
-                    .gap_1()
-                    .child(self.control(
-                        "diff-unified",
-                        "Unified",
-                        !self.split,
-                        Control::Unified,
-                        cx,
-                    ))
-                    .child(self.control("diff-split", "Split", self.split, Control::Split, cx))
-                    .child(self.control(
-                        "diff-wrap",
-                        if self.wrap {
-                            "Wrap: on"
-                        } else {
-                            "Wrap: off ↔"
-                        },
-                        self.wrap,
-                        Control::Wrap,
-                        cx,
-                    ))
-                    .child(self.control(
-                        "diff-copy",
-                        "Copy diff",
-                        false,
-                        Control::CopyDiff(None),
-                        cx,
-                    )),
+                    )))
+                    .child(stats(self.counts))
+                    .child(
+                        div()
+                            .ml_auto()
+                            .flex()
+                            .flex_row()
+                            .flex_wrap()
+                            .gap_0p5()
+                            .child(self.control(
+                                "diff-unified",
+                                "Unified",
+                                !self.split,
+                                Control::Unified,
+                                cx,
+                            ))
+                            .child(self.control(
+                                "diff-split",
+                                "Split",
+                                self.split,
+                                Control::Split,
+                                cx,
+                            ))
+                            .child(self.control(
+                                "diff-wrap",
+                                if self.wrap { "Wrap" } else { "No wrap ↔" },
+                                self.wrap,
+                                Control::Wrap,
+                                cx,
+                            ))
+                            .child(self.control(
+                                "diff-copy",
+                                "Copy diff",
+                                false,
+                                Control::CopyDiff(None),
+                                cx,
+                            )),
+                    ),
             );
         let start = self.file_page * PAGE_FILES;
         let end = (start + PAGE_FILES).min(self.files.len());
@@ -876,6 +915,8 @@ impl Render for DiffView {
                     .flex_row()
                     .flex_wrap()
                     .items_center()
+                    .px_1()
+                    .text_color(Theme::global().TEXT_FAINT)
                     .when(start > 0, |el| {
                         el.child(self.control(
                             "diff-files-prev",

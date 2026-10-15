@@ -208,8 +208,8 @@ impl TimedPreview {
             };
             return base
                 .px_3()
-                .text_size(px(10.))
-                .text_color(theme.TEXT_DIM)
+                .text_size(px(11.))
+                .text_color(theme.TEXT_FAINT)
                 .child(label);
         }
         let (marker, _text, tint) = if let Some(text) = line.strip_prefix('+') {
@@ -227,11 +227,11 @@ impl TimedPreview {
                 .flex_none()
                 .text_right()
                 .pr_1()
-                .text_size(px(10.))
+                .text_size(px(11.))
                 .text_color(theme.CODE_GUTTER)
                 .child(number.to_owned())
         };
-        base.when_some(tint, |el, color| el.bg(to_hsla(color).opacity(0.09)))
+        base.when_some(tint, |el, color| el.bg(to_hsla(color).opacity(0.08)))
             .child(gutter(if row.new.is_empty() {
                 &row.old
             } else {
@@ -379,8 +379,8 @@ impl Render for TimedPreview {
                 div()
                     .px_3()
                     .py_2()
-                    .text_size(px(11.))
-                    .text_color(theme.TEXT_DIM)
+                    .text_size(px(12.))
+                    .text_color(theme.TEXT_FAINT)
                     .child("No changed lines to preview."),
             );
         }
@@ -388,18 +388,18 @@ impl Render for TimedPreview {
         // clearance below its rectangular line fills for the rounded corners.
         // A collapsed card ends at the metadata row itself, with no footer.
         body.when(open && !self.header.review.failed, |el| {
-            el.child(div().h(px(8.)).rounded_b_lg().bg(theme.CODE_BG))
+            el.child(div().h(px(8.)).rounded_b(px(14.)).bg(theme.CODE_BG))
         })
         .when_some(self.header.error.clone(), |el, message| {
             let index = self.index;
             el.child(
                 div()
                     .debug_selector(move || format!("edit-preview-footer-{index}").into())
-                    .rounded_b_lg()
+                    .rounded_b(px(14.))
                     .bg(theme.CODE_BG)
                     .px_3()
                     .py_1()
-                    .text_size(px(10.))
+                    .text_size(px(12.))
                     .child(
                         div()
                             .debug_selector(|| "tool-error".into())

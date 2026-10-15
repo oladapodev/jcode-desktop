@@ -132,7 +132,7 @@ impl TerminalPanel {
         };
         let grid = &self.terminal.grid;
         let base_fg = packed(theme.TEXT);
-        let background = theme.panel_background(self.surface_focused);
+        let background = super::background(theme, self.surface_focused);
         let base_bg = packed(background);
         let cursor = grid.cursor_pos();
         let show_cursor = self.terminal.cursor_visible && grid.scroll_offset == 0 && !self.exited;

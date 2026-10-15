@@ -120,10 +120,8 @@ impl Panel {
                 .min_w_0()
                 .mb_2()
                 .p_3()
-                .rounded_xl()
-                .bg(theme.PANEL_BG)
-                .border_1()
-                .border_color(theme.PANEL_BORDER)
+                .rounded(px(16.))
+                .bg(theme.popover_background())
                 .flex()
                 .flex_col()
                 .gap_2()
@@ -139,7 +137,8 @@ impl Panel {
                             div()
                                 .flex_1()
                                 .text_color(theme.TEXT)
-                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_size(px(13.))
+                                .font_weight(FontWeight::MEDIUM)
                                 .child("Select provider"),
                         )
                         .child(login_button("provider-picker-close", "Close").on_click(

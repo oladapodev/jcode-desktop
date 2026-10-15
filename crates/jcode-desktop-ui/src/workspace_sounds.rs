@@ -5,56 +5,36 @@ use crate::sounds::{self, Cue};
 impl Workspace {
     pub(super) fn render_sound_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let enabled = sounds::enabled(cx);
+        let rows = super::settings_rows::with_tooltip(
+            super::settings_rows::row("settings-sounds", "Sound effects"),
+            "Soft cues for messages, attention, errors, finished tasks, and opening or closing panels. Applies to all windows. Off by default.",
+        )
+        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+            let enabled = !sounds::enabled(cx);
+            if let Err(error) = crate::config::persist_sounds_enabled(enabled) {
+                this.status = format!("Could not save sound setting: {error}");
+                cx.notify();
+                return;
+            }
+            sounds::set_enabled(enabled, cx);
+            if enabled {
+                sounds::play(Cue::Complete, cx);
+            }
+            cx.notify();
+        }))
+        .child(super::settings_rows::switch(enabled));
         div()
             .flex()
             .flex_col()
-            .gap_2()
-            .mt_2()
-            .child(div().text_color(Theme::global().TEXT_DIM).child("Sounds · all windows"))
-            .child(
-                div()
-                    .id("settings-sounds")
-                    .debug_selector(|| "settings-sounds".into())
-                    .px_2()
-                    .py_2()
-                    .rounded_sm()
-                    .flex()
-                    .justify_between()
-                    .gap_2()
-                    .cursor_pointer()
-                    .bg(Theme::global().PANEL_BG)
-                    .hover(|el| el.bg(Theme::global().TOOL_BG))
-                    .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
-                        let enabled = !sounds::enabled(cx);
-                        if let Err(error) = crate::config::persist_sounds_enabled(enabled) {
-                            this.status = format!("Could not save sound setting: {error}");
-                            cx.notify();
-                            return;
-                        }
-                        sounds::set_enabled(enabled, cx);
-                        if enabled {
-                            sounds::play(Cue::Complete, cx);
-                        }
-                        cx.notify();
-                    }))
-                    .child("Sound effects")
-                    .child(div().text_color(if enabled { Theme::global().ACCENT } else { Theme::global().TEXT_DIM }).child(if enabled { "On" } else { "Off" })),
-            )
-            .child(div().text_color(Theme::global().TEXT_DIM).child("Soft cues for messages, attention, errors, finished tasks, and opening or closing panels. Off by default."))
+            .gap(px(2.0))
+            .child(super::settings_rows::section_label("Sounds"))
+            .child(rows)
             .when(enabled, |el| el.child(
-                div()
-                    .id("settings-sounds-preview")
-                    .debug_selector(|| "settings-sounds-preview".into())
-                    .px_2()
-                    .py_2()
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .bg(Theme::global().PANEL_BG)
-                    .hover(|el| el.bg(Theme::global().TOOL_BG))
+                super::settings_rows::row("settings-sounds-preview", "Play preview")
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|_, _, _, cx| {
                         sounds::play(Cue::Complete, cx);
                     }))
-                    .child("Play preview"),
+                    .child(super::settings_rows::chevron()),
             ))
             .into_any_element()
     }

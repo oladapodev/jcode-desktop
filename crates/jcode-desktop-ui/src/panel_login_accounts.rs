@@ -524,7 +524,7 @@ fn limit_meter(limit: &UsageLimit) -> gpui::AnyElement {
         .max_w(px(160.))
         .child(
             div()
-                .text_size(px(10.))
+                .text_size(px(10.5))
                 .text_color(theme.TEXT_DIM)
                 .whitespace_nowrap()
                 .overflow_hidden()
@@ -533,10 +533,10 @@ fn limit_meter(limit: &UsageLimit) -> gpui::AnyElement {
         .child(
             div()
                 .w_full()
-                .h(px(4.))
+                .h(px(3.))
                 .rounded_full()
                 .overflow_hidden()
-                .bg(theme.INLINE_CODE_BG)
+                .bg(theme.TEXT.opacity(0.08))
                 .child(
                     div()
                         .h_full()
@@ -762,7 +762,8 @@ impl Panel {
             .child(
                 div()
                     .flex_none()
-                    .text_size(px(14.))
+                    .text_size(px(13.5))
+                    .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.TEXT)
                     .whitespace_nowrap()
                     .child(title.clone()),
@@ -810,7 +811,7 @@ impl Panel {
         if !detail.is_empty() {
             text = text.child(
                 div()
-                    .text_size(px(11.))
+                    .text_size(px(11.5))
                     .text_color(theme.TEXT_DIM)
                     .whitespace_nowrap()
                     .overflow_hidden()
@@ -856,14 +857,14 @@ impl Panel {
             .pr(px(10.))
             .py_1p5()
             .min_h(px(if connected { 56. } else { 44. }))
-            .rounded_xl()
+            .rounded(px(14.))
             .bg(if connected {
                 theme.HEADER_BG
             } else {
                 theme.HEADER_BG.opacity(0.55)
             })
             .cursor_pointer()
-            .hover(|el| el.bg(theme.ACCENT_DIM));
+            .hover(|el| el.bg(theme.TOOL_BG));
         if connected {
             let handle_id = format!("login-drag-handle-{key}");
             let selector = handle_id.clone();
@@ -1024,8 +1025,7 @@ impl Panel {
                     .px_2p5()
                     .py(px(3.))
                     .rounded_full()
-                    .border_1()
-                    .border_color(theme.PANEL_BORDER)
+                    .bg(theme.TEXT.opacity(0.06))
                     .text_size(px(11.))
                     .text_color(theme.TEXT_DIM)
                     .whitespace_nowrap()
@@ -1099,9 +1099,9 @@ impl Panel {
             .debug_selector(move || id.into())
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(6.0))
             .p_2()
-            .rounded_xl()
+            .rounded(px(16.0))
             .drag_over::<DraggedAccount>(|style, _, _, _| {
                 style.bg(Theme::global().ACCENT_DIM.opacity(0.35))
             })
@@ -1113,30 +1113,27 @@ impl Panel {
             })
             .child(
                 div()
+                    .id(SharedString::from(format!("{id}-title")))
                     .flex()
-                    .flex_col()
-                    .gap(px(2.))
+                    .items_center()
+                    .gap_2()
                     .px_2()
                     .pb_1()
+                    .tooltip(move |_, cx| {
+                        cx.new(|_| super::usage::MeterTooltip(hint.into())).into()
+                    })
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(theme.TEXT)
-                                    .child(title),
-                            )
-                            .child(chip(rows.len().to_string(), theme.TEXT_DIM)),
+                            .text_size(px(12.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme.TEXT_DIM)
+                            .child(title),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
-                            .text_color(theme.TEXT_DIM)
-                            .child(hint),
+                            .text_size(px(11.0))
+                            .text_color(theme.TEXT_FAINT)
+                            .child(rows.len().to_string()),
                     ),
             );
         if rows.is_empty() {
@@ -1144,7 +1141,7 @@ impl Panel {
                 div()
                     .px_3()
                     .py_3()
-                    .rounded_full()
+                    .rounded(px(14.0))
                     .bg(theme.HEADER_BG.opacity(0.5))
                     .text_size(px(12.))
                     .text_color(theme.TEXT_DIM)
@@ -1213,7 +1210,8 @@ impl Panel {
                     div()
                         .px_2()
                         .text_size(px(12.))
-                        .font_weight(FontWeight::SEMIBOLD)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.TEXT_DIM)
                         .child("Connect an account"),
                 );
             if !groups.addable.is_empty() {

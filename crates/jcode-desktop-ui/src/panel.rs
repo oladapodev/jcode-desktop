@@ -4445,103 +4445,8 @@ impl Render for Panel {
                 .child(terminal.clone())
                 .into_any_element();
         }
-        if let Some(file) = &self.code_file {
-            let path = file.path.display().to_string();
-            let mut body = div()
-                .id("code-file-contents")
-                .debug_selector(|| "code-file-contents".into())
-                .flex_1()
-                .min_h_0()
-                .overflow_scroll()
-                .font_family(Theme::global().FONT_MONO)
-                .text_size(px(12.0))
-                .py_2();
-            match &file.contents {
-                Ok(contents) => {
-                    if !contents.is_empty() {
-                        // One shaped leaf lets a drag span lines without copying
-                        // the separate, nonselectable line-number gutter.
-                        body = body.child(
-                            div()
-                                .flex()
-                                .min_w_full()
-                                .child(
-                                    div()
-                                        .w(px(52.0))
-                                        .flex_none()
-                                        .pr_3()
-                                        .text_align(gpui::TextAlign::Right)
-                                        .text_color(Theme::global().CODE_GUTTER)
-                                        .children(contents.lines().enumerate().map(
-                                            |(index, _)| div().child((index + 1).to_string()),
-                                        )),
-                                )
-                                .child(
-                                    div()
-                                        .pr_4()
-                                        .whitespace_nowrap()
-                                        .text_color(Theme::global().CODE_TEXT)
-                                        .child(text_selection::plain(
-                                            self.transcript_selection.clone(),
-                                            "code-file-text",
-                                            contents.clone(),
-                                            window,
-                                            cx,
-                                        )),
-                                ),
-                        );
-                    }
-                    if contents.is_empty() {
-                        body = body.child(
-                            div()
-                                .px_4()
-                                .text_color(Theme::global().TEXT_DIM)
-                                .child("empty file"),
-                        );
-                    }
-                }
-                Err(error) => {
-                    body = body.child(div().p_4().text_color(Theme::global().ERROR).child(
-                        text_selection::plain(
-                            self.transcript_selection.clone(),
-                            "code-file-error",
-                            error.clone(),
-                            window,
-                            cx,
-                        ),
-                    ));
-                }
-            }
-            return div()
-                .size_full()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .track_focus(&self.focus_handle)
-                .child(
-                    div()
-                        .flex_none()
-                        .px_3()
-                        .py_2()
-                        .border_b_1()
-                        .border_color(Theme::global().CODE_BORDER)
-                        .bg(Theme::global().CODE_HEADER_BG)
-                        .font_family(Theme::global().FONT_MONO)
-                        .text_size(px(11.0))
-                        .text_color(Theme::global().TEXT_DIM)
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_ellipsis()
-                        .child(text_selection::plain(
-                            self.transcript_selection.clone(),
-                            "code-file-path",
-                            path,
-                            window,
-                            cx,
-                        )),
-                )
-                .child(body)
-                .into_any_element();
+        if self.code_file.is_some() {
+            return self.render_code_file(window, cx);
         }
         if self.applet.is_some() {
             return self.render_applet(window, cx);
@@ -5923,8 +5828,8 @@ fn render_todo_marker(todo: &TodoCardItem, id: String) -> impl IntoElement {
             marker.debug_selector(|| "todo-row-confidence".into())
         })
         .flex_none()
-        .w(px(13.0))
-        .h(px(13.0))
+        .w(px(11.0))
+        .h(px(11.0))
         .rounded_full()
         .border_1()
         .border_color(color)
@@ -5935,7 +5840,7 @@ fn render_todo_marker(todo: &TodoCardItem, id: String) -> impl IntoElement {
         .when(todo.status == "in_progress", |marker| {
             let dot = if confidence.is_some() { color } else { Theme::global().ACCENT };
             marker
-                .p(px(3.0))
+                .p(px(2.5))
                 .child(div().size_full().rounded_full().bg(dot))
         })
         .when_some(label, |marker, label| {
@@ -6125,10 +6030,12 @@ fn render_todo_gate_row(goal: &jcode_base::todo::TodoGoal) -> impl IntoElement {
         .w_full()
         .min_w_0()
         .pl(px(19.0))
+        .pb_0p5()
         .overflow_hidden()
         .whitespace_nowrap()
         .text_ellipsis()
         .text_size(px(11.0))
+        .line_height(px(16.0))
         .child(gpui::StyledText::new(text).with_highlights(highlights))
 }
 
@@ -6190,13 +6097,13 @@ fn render_todo_card_with_style(
         .flex_col()
         .w_full()
         .gap_0p5()
-        .when(!pinned, |body| body.max_h(px(132.0)).overflow_y_scroll());
+        .when(!pinned, |body| body.max_h(px(150.0)).overflow_y_scroll());
     if payload.todos.is_empty() {
         body = body.child(
             div()
                 .py_1()
-                .text_size(px(12.0))
-                .text_color(Theme::global().TEXT_DIM)
+                .text_size(px(12.5))
+                .text_color(Theme::global().TEXT_FAINT)
                 .child("No tasks yet. Jcode will populate them as work is planned."),
         );
     } else {
@@ -6208,7 +6115,9 @@ fn render_todo_card_with_style(
             // GPUI does not always stretch nested flex rows through a scrolling
             // column. Give every level an explicit width so each row's flex_1
             // text child receives space instead of collapsing to zero width.
-            let mut section = div().flex().flex_col().w_full();
+            // Section labels read as quiet sentence-case captions, not
+            // all-caps headings.
+            let mut section = div().flex().flex_col().w_full().gap(px(1.0));
             let has_any_group = payload.todos.iter().any(|todo| todo.group.is_some());
             if group.is_some() || has_any_group {
                 section = section.child(
@@ -6216,26 +6125,29 @@ fn render_todo_card_with_style(
                         .flex()
                         .items_center()
                         .justify_between()
-                        .text_size(px(10.0))
-                        .pt_0p5()
+                        .gap_2()
+                        .text_size(px(11.0))
+                        .line_height(px(16.0))
+                        .when(group_index > 0, |el| el.pt_1p5())
                         .child(
                             div()
                                 .min_w_0()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
                                 .text_ellipsis()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(Theme::global().ACCENT_MUTED)
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(Theme::global().TEXT_FAINT)
                                 .child(text_selection::plain(
                                     selection.clone(),
                                     format!("{key}-group-{group_index}"),
-                                    group.unwrap_or("Other").to_uppercase(),
+                                    group.unwrap_or("Other").to_owned(),
                                     window,
                                     cx,
                                 )),
                         )
                         .child(
                             div()
+                                .flex_none()
                                 .text_color(Theme::global().TEXT_FAINT)
                                 .child(format!("{done}/{}", todos.len())),
                         ),
@@ -6251,7 +6163,8 @@ fn render_todo_card_with_style(
                         .flex()
                         .w_full()
                         .items_center()
-                        .gap_1p5()
+                        .gap_2()
+                        .h(px(22.0))
                         .child(render_todo_marker(
                             todo,
                             format!("{key}-marker-{group_index}-{todo_index}"),
@@ -6264,13 +6177,11 @@ fn render_todo_card_with_style(
                                 .overflow_hidden()
                                 .whitespace_nowrap()
                                 .text_ellipsis()
-                                .text_size(px(if pinned { 12.0 } else { 12.5 }))
-                                .text_color(if todo.status == "completed" {
-                                    Theme::global().TEXT_DIM
-                                } else if pinned {
-                                    Theme::global().TEXT_USER
-                                } else {
-                                    Theme::global().TEXT
+                                .text_size(px(13.0))
+                                .text_color(match todo.status.as_str() {
+                                    "completed" | "cancelled" => Theme::global().TEXT_FAINT,
+                                    _ if pinned => Theme::global().TEXT_USER,
+                                    _ => Theme::global().TEXT,
                                 })
                                 .child(text_selection::plain(
                                     selection.clone(),
@@ -6292,17 +6203,17 @@ fn render_todo_card_with_style(
             .flex()
             .flex_col()
             .gap_1()
-            .rounded(px(8.0))
+            .rounded(px(14.0))
             .bg(Theme::global().prompt_background(0))
-            .px_2()
-            .py_1p5()
+            .px_3()
+            .py_2()
             .child(
                 div()
                     .debug_selector(|| "pinned-todo-intent-row".into())
                     .flex()
                     .items_center()
                     .gap_1()
-                    .text_size(px(12.0))
+                    .text_size(px(12.5))
                     .when_some(payload.plan.understands_user_intent, |line, state| {
                         // Mirror the TUI: "Intent clear: <intention>".
                         line.child(
@@ -6351,8 +6262,8 @@ fn render_todo_card_with_style(
                             .debug_selector(|| "pinned-todo-count".into())
                             .flex_none()
                             .font_family(Theme::global().FONT_UI)
-                            .text_size(px(10.5))
-                            .text_color(Theme::global().TEXT_DIM)
+                            .text_size(px(11.0))
+                            .text_color(Theme::global().TEXT_FAINT)
                             .child({
                                 // Cancelled work is not outstanding progress.
                                 let active = payload
@@ -6373,19 +6284,18 @@ fn render_todo_card_with_style(
         .flex()
         .flex_none()
         .flex_col()
-        .gap_1()
-        .rounded_md()
-        .border_1()
-        .border_color(Theme::global().TOOL_BORDER)
-        .bg(Theme::global().TOOL_BG)
-        .px_2()
-        .py_1p5()
+        .gap_1p5()
+        .rounded(px(14.0))
+        .bg(Theme::global().CODE_BG)
+        .px_3()
+        .py_2p5()
         .child(
             div()
                 .flex()
                 .items_center()
                 .justify_between()
                 .gap_2()
+                .text_size(px(12.5))
                 .child(crate::tool_icon::render_status("todo", true, false))
                 .when_some(intention, |header, intention| {
                     header.child(
@@ -6395,8 +6305,8 @@ fn render_todo_card_with_style(
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(Theme::global().HEADING)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(Theme::global().TEXT)
                             .child(text_selection::plain(
                                 selection.clone(),
                                 format!("{key}-intention"),
@@ -6408,17 +6318,18 @@ fn render_todo_card_with_style(
                 })
                 .child(
                     div()
-                        .text_size(px(10.5))
-                        .text_color(Theme::global().TEXT_DIM)
-                        .child(format!("{completed} of {total} complete")),
+                        .flex_none()
+                        .text_size(px(11.0))
+                        .text_color(Theme::global().TEXT_FAINT)
+                        .child(format!("{completed}/{total}")),
                 ),
         )
         .child(
             div()
-                .h(px(3.0))
+                .h(px(2.0))
                 .w_full()
                 .rounded_full()
-                .bg(Theme::global().CODE_BORDER)
+                .bg(Theme::global().USER_BG)
                 .overflow_hidden()
                 .child(
                     div()

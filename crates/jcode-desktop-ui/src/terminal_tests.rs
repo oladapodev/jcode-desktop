@@ -13,17 +13,13 @@ fn color_queries_follow_desktop_theme_and_changes() {
         (0xe4ddd3, 0x292724, true),
     ] {
         theme.TEXT = gpui::rgb(foreground);
-        if focused {
-            theme.PANEL_BG = gpui::rgb(background);
-        } else {
-            theme.HEADER_BG = gpui::rgb(background);
-        }
+        theme.CODE_BG = gpui::rgb(background);
         sync_terminal_colors(&mut terminal, &theme, focused);
         // Queries can cross PTY read boundaries, with either terminator.
         terminal.process(b"\x1b]10;?");
         terminal.process(b"\x07\x1b]11;?\x1b");
         terminal.process(b"\\");
-        let expected = [(10, theme.TEXT), (11, theme.panel_background(focused))]
+        let expected = [(10, theme.TEXT), (11, super::background(&theme, focused))]
             .into_iter()
             .map(|(command, color)| {
                 let [r, g, b] = color_channels(color);
@@ -149,7 +145,7 @@ fn panel_replay_sets_theme_colors_without_sending_historical_replies(
             panel.process_output(b"\x1b]11;?\x07", false);
             assert!(panel.terminal.drain_responses().is_none());
             panel.terminal.process(b"\x1b]11;?\x07");
-            let [r, g, b] = color_channels(Theme::global().panel_background(false));
+            let [r, g, b] = color_channels(super::background(Theme::global(), false));
             assert_eq!(
                 panel.terminal.drain_responses().unwrap(),
                 format!("\x1b]11;rgb:{r:02x}/{g:02x}/{b:02x}\x1b\\").as_bytes()
@@ -166,7 +162,7 @@ fn pane_focus_updates_color_queries_without_waiting_for_pty_output(cx: &mut gpui
             for focused in [true, false, true] {
                 panel.set_surface_focused(focused, cx);
                 panel.terminal.process(b"\x1b]11;?\x07");
-                let [r, g, b] = color_channels(Theme::global().panel_background(focused));
+                let [r, g, b] = color_channels(super::background(Theme::global(), focused));
                 assert_eq!(
                     panel.terminal.drain_responses().unwrap(),
                     format!("\x1b]11;rgb:{r:02x}/{g:02x}/{b:02x}\x1b\\").as_bytes()

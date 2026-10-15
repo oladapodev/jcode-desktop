@@ -222,21 +222,8 @@ impl Workspace {
 
     /// Settings row: reveal the account email in the sidebar. Off by default.
     pub(super) fn render_account_email_setting(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme = Theme::global();
         let enabled = show_email();
-        div()
-            .id("settings-show-account-email")
-            .debug_selector(|| "settings-show-account-email".into())
-            .flex_none()
-            .px_2()
-            .py_2()
-            .rounded_sm()
-            .flex()
-            .justify_between()
-            .gap_2()
-            .cursor_pointer()
-            .bg(theme.PANEL_BG)
-            .hover(|el| el.bg(theme.TOOL_BG))
+        super::settings_rows::row("settings-show-account-email", "Show email in sidebar")
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
@@ -248,16 +235,7 @@ impl Workspace {
                     cx.notify();
                 }),
             )
-            .child("Show account email in sidebar")
-            .child(
-                div()
-                    .text_color(if enabled {
-                        theme.ACCENT
-                    } else {
-                        theme.TEXT_DIM
-                    })
-                    .child(if enabled { "On" } else { "Off" }),
-            )
+            .child(super::settings_rows::switch(enabled))
             .into_any_element()
     }
 }

@@ -201,6 +201,144 @@ impl Panel {
         true
     }
 
+    /// Read-only file preview opened from the Files sidebar.
+    pub(super) fn render_code_file(&self, window: &Window, cx: &Context<Self>) -> gpui::AnyElement {
+        const CODE_SIZE: f32 = 12.5;
+        const CODE_LINE: f32 = 20.0;
+        let theme = Theme::global();
+        let file = self.code_file.as_ref().expect("code file panel");
+        let path = file.path.display().to_string();
+        let name = file
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        let mut body = div()
+            .id("code-file-contents")
+            .debug_selector(|| "code-file-contents".into())
+            .flex_1()
+            .min_h_0()
+            .overflow_scroll()
+            .bg(theme.CODE_BG)
+            .font_family(theme.FONT_MONO)
+            .text_size(px(CODE_SIZE))
+            .line_height(px(CODE_LINE))
+            .pt(px(10.0))
+            .pb(px(24.0));
+        match &file.contents {
+            Ok(contents) if !contents.is_empty() => {
+                // One shaped leaf lets a drag span lines without copying
+                // the separate, nonselectable line-number gutter.
+                body = body.child(
+                    div()
+                        .flex()
+                        .min_w_full()
+                        .child(
+                            div()
+                                .w(px(56.0))
+                                .flex_none()
+                                .pr(px(16.0))
+                                .text_align(gpui::TextAlign::Right)
+                                .text_color(theme.CODE_GUTTER)
+                                .children(
+                                    contents
+                                        .lines()
+                                        .enumerate()
+                                        .map(|(index, _)| div().child((index + 1).to_string())),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .pr(px(20.0))
+                                .whitespace_nowrap()
+                                .text_color(theme.CODE_TEXT)
+                                .child(text_selection::plain(
+                                    self.transcript_selection.clone(),
+                                    "code-file-text",
+                                    contents.clone(),
+                                    window,
+                                    cx,
+                                )),
+                        ),
+                );
+            }
+            Ok(_) => {
+                body = body.child(
+                    div()
+                        .px(px(20.0))
+                        .font_family(theme.FONT_UI)
+                        .text_size(px(12.5))
+                        .text_color(theme.TEXT_FAINT)
+                        .child("Empty file"),
+                );
+            }
+            Err(error) => {
+                body = body.child(
+                    div()
+                        .px(px(20.0))
+                        .py(px(6.0))
+                        .font_family(theme.FONT_UI)
+                        .text_size(px(12.5))
+                        .text_color(theme.ERROR)
+                        .child(text_selection::plain(
+                            self.transcript_selection.clone(),
+                            "code-file-error",
+                            error.clone(),
+                            window,
+                            cx,
+                        )),
+                );
+            }
+        }
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .bg(theme.CODE_BG)
+            .track_focus(&self.focus_handle)
+            .child(
+                div()
+                    .debug_selector(|| "code-file-header".into())
+                    .flex_none()
+                    .h(px(40.0))
+                    .px(px(16.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(
+                        div()
+                            .flex_none()
+                            .max_w(relative(0.5))
+                            .truncate()
+                            .font_family(theme.FONT_UI)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(px(12.5))
+                            .text_color(theme.TEXT)
+                            .child(name),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .font_family(theme.FONT_MONO)
+                            .text_size(px(11.0))
+                            .text_color(theme.TEXT_FAINT)
+                            .child(text_selection::plain(
+                                self.transcript_selection.clone(),
+                                "code-file-path",
+                                path,
+                                window,
+                                cx,
+                            )),
+                    ),
+            )
+            .child(body)
+            .into_any_element()
+    }
+
     pub(super) fn render_side_document(
         &self,
         window: &Window,
@@ -232,16 +370,20 @@ impl Panel {
                     .flex_none()
                     .min_w_0()
                     .overflow_hidden()
-                    .p_4()
+                    .px(px(20.0))
+                    .pt(px(14.0))
+                    .pb(px(10.0))
                     .flex()
                     .flex_col()
-                    .gap_1()
+                    .gap(px(3.0))
                     .child(
                         div()
                             .debug_selector(|| "side-document-title".into())
                             .min_w_0()
                             .truncate()
-                            .font_weight(FontWeight::SEMIBOLD)
+                            .font_family(Theme::global().FONT_UI)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(px(12.5))
                             .child(text_selection::plain(
                                 document.selection.clone(),
                                 "document-title",
@@ -255,8 +397,9 @@ impl Panel {
                             .debug_selector(|| "side-document-source".into())
                             .min_w_0()
                             .truncate()
+                            .font_family(Theme::global().FONT_MONO)
                             .text_size(px(11.))
-                            .text_color(Theme::global().TEXT_DIM)
+                            .text_color(Theme::global().TEXT_FAINT)
                             .child(text_selection::plain(
                                 document.selection.clone(),
                                 "document-source",
@@ -301,7 +444,9 @@ impl Panel {
                                     cx.notify();
                                 });
                             })
-                            .p_4()
+                            .px(px(20.0))
+                            .pt(px(6.0))
+                            .pb(px(28.0))
                             .child(markdown::render(
                                 &page.content,
                                 0,

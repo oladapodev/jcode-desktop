@@ -662,6 +662,14 @@ impl Workspace {
         self.live_tabs.header_offset = version_width + status_width;
         self.live_tabs.version_width = version_width;
         self.live_tabs.hit_targets.clear();
+        let theme = Theme::global();
+        // Flat tabs: the selected one shares the sheet's fill, the rest sit on
+        // the window backdrop with no fill or outline until hovered.
+        let backdrop = if self.layout_mode == crate::config::LayoutMode::FolderTabs {
+            theme.HEADER_BG
+        } else {
+            theme.BG
+        };
         let paint_order = TabLayout::hover_paint_order(entries.len(), selected, hovered);
         for &position in &paint_order {
             let (index, row, _) = entries[position];
@@ -669,18 +677,14 @@ impl Workspace {
             let popped = Some(position) == hovered;
             let compact = row != self.active_row && !popped;
             let key = keys[position];
-            let accent = Theme::global().workspace_accent(row);
-            let background = Theme::global()
-                .panel_background(focused)
-                .blend(accent.opacity(if focused { 0.16 } else { 0.05 }));
             let current = geometry[position];
             let (exposed_left, visible) = TabLayout::exposed_in(&geometry, position, &paint_order);
             if let Some(index) = index {
                 let x = exposed_left + visible / 2.0;
                 self.live_tabs.hit_targets.push((index, x));
             }
-            let padding = (visible / 12.0).min(6.0);
-            let (title, emoji, ring, outline) = match index {
+            let padding = (visible / 12.0).min(10.0);
+            let (title, emoji, ring) = match index {
                 Some(index) => {
                     let panel = self.slots[index].panel.read(cx);
                     (
@@ -689,16 +693,32 @@ impl Workspace {
                             .map(jcode_core::id::session_icon)
                             .unwrap_or("💫"),
                         panel.tab_ring(),
-                        Some(panel.tab_outline()),
                     )
                 }
-                None => ("Empty workspace".into(), "📁", None, None),
+                None => ("Empty workspace".into(), "📁", None),
             };
-            let tab_bg = match ring {
-                Some(ring) => background.blend(ring.tint()),
-                None => background,
+            // Colour only carries status: live work, an unseen finish, or a failure.
+            // A paused plan resolves to the dim ink and stays quiet here.
+            let status_color = ring.and_then(|ring| {
+                if ring.working() {
+                    Some(theme.ACCENT)
+                } else {
+                    (ring.color != theme.TEXT_DIM).then_some(ring.color)
+                }
+            });
+            let tab_bg = if focused { theme.PANEL_BG } else { backdrop };
+            let hover_bg = if focused {
+                theme.PANEL_BG
+            } else {
+                backdrop.blend(theme.TEXT.opacity(0.06))
             };
-            let hover_bg = Theme::global().PANEL_BG.blend(accent.opacity(0.20));
+            // Other workspaces' narrow tabs carry initials instead of a title.
+            let initials: String = title
+                .split_whitespace()
+                .filter_map(|word| word.chars().find(|c| c.is_alphanumeric()))
+                .take(2)
+                .flat_map(char::to_uppercase)
+                .collect();
             // Fade toward the tab fill instead of an ellipsis, so long titles
             // use the whole tab and trail off softly at the right edge.
             let fade = |bg: gpui::Rgba| {
@@ -720,7 +740,9 @@ impl Workspace {
                 .h_full()
                 .flex()
                 .items_center()
-                .gap(px((visible / 12.0).min(4.0)))
+                .gap(px((visible / 12.0).min(6.0)))
+                // Identity anchor kept for navigation and tests. The session
+                // emoji lives in the tooltip, so the tab itself stays text-only.
                 .child(
                     div()
                         .debug_selector(move || match index {
@@ -728,13 +750,22 @@ impl Workspace {
                             None => "live-session-empty-tab-emoji".into(),
                         })
                         .flex_none()
-                        .size(px((visible - 2.0 - 2.0 * padding).clamp(1.0, 20.0)))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_size(px((visible - 2.0 - 2.0 * padding).clamp(1.0, 14.0)))
-                        .child(emoji),
+                        .w(px(0.0))
+                        .h(px(14.0)),
                 )
+                .when(compact || !(focused || visible >= 52.0), |el| {
+                    el.child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_center()
+                            .text_size(px(11.0))
+                            .text_color(theme.TEXT_FAINT)
+                            .child(initials.clone()),
+                    )
+                })
                 .when(!compact && (focused || visible >= 52.0), |el| {
                     el.child(
                         div()
@@ -764,6 +795,20 @@ impl Workspace {
                                         style.bg(fade(hover_bg))
                                     }),
                             ),
+                    )
+                })
+                // Status sits after the title, so activity never shifts it.
+                .when_some(status_color.filter(|_| visible >= 28.0), |el, color| {
+                    el.child(
+                        div()
+                            .debug_selector(move || match index {
+                                Some(index) => format!("live-session-tab-{index}-ring"),
+                                None => "live-session-empty-tab-ring".into(),
+                            })
+                            .flex_none()
+                            .size(px(6.0))
+                            .rounded_full()
+                            .bg(color),
                     )
                 })
                 // Actions float over the faded end of the title on hover, so
@@ -802,27 +847,15 @@ impl Workspace {
                     .h(px(current.height))
                     .flex()
                     .items_center()
-                    .rounded_md()
-                    // Crowded off-screen tabs can be narrower than two pixels.
-                    // Their border must not force the layout wider than its slot.
-                    // Use this single outline on every edge. An extra accent
-                    // stripe makes the top heavier and squares off the corners.
-                    .border(px((current.width / 2.0).min(1.0)))
-                    .border_color(match ring {
-                        // The ring paints the outline itself. Hide the static
-                        // border so progress reads as filling, not overlaying.
-                        Some(_) => accent.opacity(0.0),
-                        None if focused => accent,
-                        None => accent.opacity(0.35),
-                    })
-                    .bg(tab_bg)
-                    .text_size(px(11.0))
-                    .when(focused, |el| el.font_weight(gpui::FontWeight::SEMIBOLD))
-                    .when(popped, |el| el.shadow_md())
-                    .text_color(if focused {
-                        Theme::global().TEXT
+                    .rounded(px(8.0))
+                    .bg(if popped { hover_bg } else { tab_bg })
+                    .font_family(theme.FONT_UI)
+                    .text_size(px(12.5))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(if focused || popped {
+                        theme.TEXT
                     } else {
-                        Theme::global().TEXT_DIM
+                        theme.TEXT_DIM
                     })
                     .occlude()
                     .cursor_pointer()
@@ -843,29 +876,16 @@ impl Workspace {
                     })
                     .tooltip({
                         let title: gpui::SharedString =
-                            format!("Workspace {} · {title}", row + 1).into();
+                            format!("{emoji} {title}\nWorkspace {}", row + 1).into();
                         move |_, cx| cx.new(|_| TabTooltip(title.clone())).into()
                     })
-                    .hover(|el| {
-                        el.bg(Theme::global().PANEL_BG.blend(accent.opacity(0.20)))
-                            .text_color(Theme::global().TEXT)
-                    })
+                    .hover(move |el| el.bg(hover_bg).text_color(Theme::global().TEXT))
                     .when(focused && index.is_some(), |el| {
                         el.child(div().absolute().inset_0().debug_selector(move || {
                             format!("live-session-tab-{}-focused", index.unwrap())
                         }))
                     })
                     .child(text)
-                    .when_some(outline.filter(|_| ring.is_some()), |el, outline| {
-                        let index = index.unwrap();
-                        el.child(
-                            div()
-                                .debug_selector(move || format!("live-session-tab-{index}-ring"))
-                                .absolute()
-                                .inset_0()
-                                .child(outline),
-                        )
-                    })
                     .when_some(index, |el, index| {
                         el.on_mouse_down(
                             gpui::MouseButton::Left,
@@ -1018,8 +1038,8 @@ impl Workspace {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded_md()
-                    .text_size(px(20.0))
+                    .rounded(px(8.0))
+                    .text_size(px(18.0))
                     .text_color(Theme::global().TEXT_DIM)
                     .cursor_pointer()
                     .occlude()
@@ -1060,8 +1080,8 @@ impl Workspace {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded_md()
-                        .text_size(px(20.0))
+                        .rounded(px(8.0))
+                        .text_size(px(18.0))
                         .text_color(Theme::global().TEXT_DIM)
                         .cursor_pointer()
                         .occlude()

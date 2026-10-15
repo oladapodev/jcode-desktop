@@ -28,12 +28,20 @@ const FONT_SIZE: f32 = 13.0;
 const LINE_HEIGHT: f32 = 18.0;
 /// Pinch scale change that produces one Ctrl+wheel notch (Jcode zooms 10%).
 const PINCH_STEP: f32 = 0.1;
-const PADDING: f32 = 10.0;
+const PADDING_X: f32 = 14.0;
+const PADDING_BOTTOM: f32 = 10.0;
+const HEADER_HEIGHT: f32 = 30.0;
 // Keep one busy PTY from starving the UI thread. A later tick drains the rest.
 const POLL_BUDGET: usize = 256 * 1024;
 
 fn color_channels(color: gpui::Rgba) -> [u8; 3] {
     [color.r, color.g, color.b].map(|channel| (channel * 255.).round() as u8)
+}
+
+/// The terminal sits on the theme's code surface in every pane, so focus moves
+/// the cursor style, never the background apps were told about.
+fn background(theme: &Theme, _focused: bool) -> gpui::Rgba {
+    theme.CODE_BG
 }
 
 fn sync_terminal_colors(terminal: &mut Terminal, theme: &Theme, focused: bool) {
@@ -42,8 +50,26 @@ fn sync_terminal_colors(terminal: &mut Terminal, theme: &Theme, focused: bool) {
     // choose a readable palette.
     terminal.set_default_colors(
         color_channels(theme.TEXT),
-        color_channels(theme.panel_background(focused)),
+        color_channels(background(theme, focused)),
     );
+}
+
+/// `~/project` instead of the full home prefix keeps the header short.
+fn display_dir(path: &str) -> String {
+    if let Some(home) = crate::platform_dirs::home_dir() {
+        let home = home.display().to_string();
+        if !home.is_empty() && home != "/" {
+            if path == home {
+                return "~".into();
+            }
+            if let Some(rest) = path.strip_prefix(&home)
+                && rest.starts_with('/')
+            {
+                return format!("~{rest}");
+            }
+        }
+    }
+    path.to_owned()
 }
 
 actions!(terminal, [Copy, Paste]);
@@ -77,6 +103,9 @@ pub struct TerminalPanel {
     ime_key_text: Option<(String, std::time::Instant)>,
     status: String,
     exited: bool,
+    /// Shown in the header strip. Presentation only.
+    working_dir: Option<String>,
+    title: Option<String>,
     bounds: Bounds<Pixels>,
     cell_width: Pixels,
     selecting: bool,
@@ -101,6 +130,7 @@ impl TerminalPanel {
         // Probe before spawning: protocol replies belong to exactly one layer.
         let engine_replies = host.terminal_engine_replies();
         let resource_id = host.terminal_create(requested_id, working_dir.as_deref());
+        let header_dir = working_dir.clone();
         let status = match (resource_id, requested_id) {
             (Some(_), _) => String::new(),
             (None, Some(_)) => "terminal session is no longer available".into(),
@@ -200,6 +230,8 @@ impl TerminalPanel {
             ime_key_text: None,
             status,
             exited: false,
+            working_dir: header_dir,
+            title: None,
             bounds: Bounds::default(),
             cell_width: px(8.0),
             selecting: false,
@@ -239,7 +271,10 @@ impl TerminalPanel {
         self.terminal.drain_sixel();
         self.terminal.drain_apc();
         self.terminal.take_osc52_clipboard();
-        self.terminal.take_title();
+        if let Some(title) = self.terminal.take_title() {
+            let title = title.trim().to_owned();
+            self.title = (!title.is_empty()).then_some(title);
+        }
         self.terminal.take_bell();
     }
 
@@ -555,6 +590,41 @@ impl Render for TerminalPanel {
         }
         let prepare = cx.entity();
         let input = cx.entity();
+        let theme = Theme::global();
+        let title = self.title.clone().unwrap_or_else(|| "Terminal".into());
+        let cwd = self.working_dir.as_deref().map(display_dir);
+        let header = div()
+            .debug_selector(|| "terminal-header".into())
+            .flex_none()
+            .h(px(HEADER_HEIGHT))
+            .px(px(PADDING_X))
+            .flex()
+            .items_center()
+            .gap(px(10.0))
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .child(
+                div()
+                    .flex_none()
+                    .max_w(gpui::relative(0.6))
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .font_family(theme.FONT_UI)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_size(px(12.0))
+                    .text_color(theme.TEXT_DIM)
+                    .child(title),
+            )
+            .children(cwd.map(|cwd| {
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .font_family(theme.FONT_MONO)
+                    .text_size(px(11.0))
+                    .text_color(theme.TEXT_FAINT)
+                    .child(cwd)
+            }));
         div()
             .id("plain-terminal")
             .debug_selector(|| "plain-terminal".into())
@@ -563,9 +633,17 @@ impl Render for TerminalPanel {
             .relative()
             .size_full()
             .overflow_hidden()
-            .p(px(PADDING))
-            .bg(Theme::global().panel_background(self.surface_focused))
+            .flex()
+            .flex_col()
+            .bg(background(theme, self.surface_focused))
+            .child(header)
             .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .px(px(PADDING_X))
+                    .pb(px(PADDING_BOTTOM))
+                    .child(
                 canvas(
                     move |bounds, window, cx| {
                         prepare.update(cx, |terminal, cx| terminal.prepare(bounds, window, cx))
@@ -581,6 +659,7 @@ impl Render for TerminalPanel {
                     },
                 )
                 .size_full(),
+                    ),
             )
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::paste))

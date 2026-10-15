@@ -72,7 +72,10 @@ pub(super) fn needs_attention() -> bool {
     action.is_some() || updates::current().is_busy()
 }
 
-const CHAR_WIDTH: f32 = 5.4;
+/// Average Inter advance at the 11px pill size.
+const CHAR_WIDTH: f32 = 6.2;
+/// Matches the 22px header status chip.
+pub(super) const PILL_HEIGHT: f32 = 22.0;
 
 /// Size the pill to its short version string, with room for an optional action
 /// and the result of a check the user asked for.
@@ -83,11 +86,11 @@ pub(super) fn pill_width() -> f32 {
         updates::is_source_build(),
     );
     let version =
-        ((crate::build_info::VERSION.len() + 1) as f32 * CHAR_WIDTH + 16.0).clamp(64.0, 132.0);
+        ((crate::build_info::VERSION.len() + 1) as f32 * CHAR_WIDTH + 20.0).clamp(64.0, 140.0);
     let feedback = visible_feedback().map_or(0.0, |(text, _)| {
-        text.chars().count() as f32 * CHAR_WIDTH + 8.0
+        text.chars().count() as f32 * CHAR_WIDTH + 10.0
     });
-    (version + feedback + action.map_or(0.0, |label| label.len() as f32 * CHAR_WIDTH + 12.0)).ceil()
+    (version + feedback + action.map_or(0.0, |label| label.len() as f32 * CHAR_WIDTH + 18.0)).ceil()
 }
 
 impl Workspace {
@@ -146,7 +149,7 @@ impl Workspace {
                 .flex_none()
                 .text_color(color)
                 .font_family(theme.FONT_UI)
-                .text_size(px(9.0))
+                .text_size(px(11.0))
                 .child(content)
         });
         if feedback.is_none() {
@@ -167,18 +170,18 @@ impl Workspace {
             .debug_selector(|| "workspace-version".into())
             .absolute()
             .left(px(4.0))
-            .top(px(5.0))
+            // Same size, radius and type as the header status chip beside it.
+            .top(px(3.0))
             .w(px(width - 4.0))
-            .h(px(18.0))
-            .rounded_full()
-            .bg(Theme::global().PANEL_BG)
-            .px(px(6.0))
+            .h(px(PILL_HEIGHT))
+            .rounded(px(7.0))
+            .px(px(8.0))
             .flex()
             .items_center()
-            .gap(px(4.0))
+            .gap(px(6.0))
             .occlude()
             .cursor_pointer()
-            .hover(|el| el.bg(Theme::global().ACCENT.opacity(0.08)))
+            .hover(|el| el.bg(Theme::global().PANEL_BG))
             .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
                 cx.stop_propagation();
                 window.prevent_default();
@@ -212,7 +215,8 @@ impl Workspace {
                     .flex_1()
                     .truncate()
                     .font_family(Theme::global().FONT_UI)
-                    .text_size(px(9.0))
+                    .text_size(px(11.0))
+                    .line_height(px(14.0))
                     .text_color(Theme::global().TEXT_DIM)
                     .tooltip(|_, cx| cx.new(|_| crate::build_info::BuildTooltip).into())
                     .child(crate::build_info::version()),
@@ -224,15 +228,15 @@ impl Workspace {
                         .id("workspace-update-button")
                         .debug_selector(|| "workspace-update-button".into())
                         .flex_none()
-                        .px_1()
+                        .px(px(6.0))
                         .h(px(16.0))
                         .flex()
                         .items_center()
-                        .rounded_full()
-                        .bg(Theme::global().ACCENT.opacity(0.12))
+                        .rounded(px(5.0))
+                        .bg(Theme::global().ACCENT_DIM)
                         .text_color(Theme::global().ACCENT)
                         .font_family(Theme::global().FONT_UI)
-                        .text_size(px(9.0))
+                        .text_size(px(11.0))
                         .cursor_pointer()
                         .hover(|el| el.bg(Theme::global().ACCENT.opacity(0.22)))
                         .child(action),
@@ -408,7 +412,7 @@ mod tests {
             .debug_bounds("workspace-version")
             .expect("a new release shows the version pill");
         assert!(header.origin.y < px(100.));
-        assert_eq!(header.size.height, px(18.0));
+        assert_eq!(header.size.height, px(PILL_HEIGHT));
         let status = vcx.debug_bounds("header-status").unwrap();
         assert!(header.right() <= status.left());
         let button = vcx

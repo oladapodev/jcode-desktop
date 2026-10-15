@@ -30,6 +30,17 @@ fn distance(index: usize, center: f32) -> f32 {
     (index as f32 - center + COUNT as f32 / 2.0).rem_euclid(COUNT as f32) - COUNT as f32 / 2.0
 }
 
+const SECTIONS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></g></svg>"#;
+
+/// Labels stay lowercase ids internally; the interface shows sentence case.
+fn capitalized(label: &str) -> String {
+    let mut chars = label.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
 // Retain the internal name so workspace state wiring stays compatible.
 #[derive(Default)]
 pub(super) struct Roller {
@@ -174,7 +185,7 @@ impl Workspace {
                     .id("sidebar-section-trigger")
                     .debug_selector(|| "sidebar-section-trigger".into())
                     .size(px(28.0))
-                    .rounded_full()
+                    .rounded(px(8.0))
                     .bg(if self.sidebar_roller.expanded {
                         Theme::global().PANEL_BG
                     } else {
@@ -191,7 +202,8 @@ impl Workspace {
                     .tooltip(move |_, cx| {
                         cx.new(|_| {
                             remotes::HeaderTooltip(format!(
-                                "Sidebar menu · {label}. Click to open or scroll to switch sections."
+                                "{} · click or scroll to switch",
+                                capitalized(label)
                             ).into())
                         })
                         .into()
@@ -208,7 +220,16 @@ impl Workspace {
                     .child(
                         div()
                             .debug_selector(move || id.into())
-                            .child("☰"),
+                            .size(px(16.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                gpui::svg()
+                                    .data(SECTIONS_ICON)
+                                    .size(px(16.0))
+                                    .text_color(Theme::global().TEXT_DIM),
+                            ),
                     ),
             );
         div()
@@ -237,28 +258,26 @@ impl Workspace {
                         .debug_selector(move || format!("{id}-expanded"))
                         .flex_1()
                         .min_w_0()
-                        .h(px(32.0))
-                        .px_2()
-                        .rounded_full()
+                        .h(px(30.0))
+                        .px(px(10.0))
+                        .rounded(px(8.0))
                         .flex()
                         .items_center()
                         .gap_2()
                         .cursor_pointer()
-                        .bg(if selected {
-                            Theme::global().ACCENT_DIM
-                        } else {
-                            Theme::global().PANEL_BG
-                        })
+                        .text_size(px(12.5))
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .when(selected, |el| el.bg(Theme::global().PANEL_BG))
                         .text_color(if selected {
                             Theme::global().TEXT
                         } else {
                             Theme::global().TEXT_DIM
                         })
                         .hover(|el| {
-                            el.bg(Theme::global().HEADER_BG)
+                            el.bg(Theme::global().PANEL_BG)
                                 .text_color(Theme::global().TEXT)
                         })
-                        .child(label)
+                        .child(capitalized(label))
                         .on_mouse_down(
                             gpui::MouseButton::Left,
                             cx.listener(move |this, _, window, cx| {
@@ -278,17 +297,20 @@ impl Workspace {
                 div()
                     .id(format!("{id}-expanded"))
                     .debug_selector(move || format!("{id}-expanded"))
-                    .px_2()
-                    .py_1()
-                    .rounded_full()
+                    .h(px(28.0))
+                    .px(px(10.0))
+                    .flex()
+                    .items_center()
+                    .rounded(px(8.0))
                     .cursor_pointer()
+                    .text_size(px(12.5))
                     .text_color(Theme::global().TEXT_DIM)
-                    .when(index == target, |el| el.bg(Theme::global().ACCENT_DIM))
+                    .when(index == target, |el| el.bg(Theme::global().PANEL_BG))
                     .hover(|el| {
-                        el.bg(Theme::global().HEADER_BG)
+                        el.bg(Theme::global().PANEL_BG)
                             .text_color(Theme::global().TEXT)
                     })
-                    .child(if label == "+" { "new chat" } else { label })
+                    .child(if label == "+" { "New chat".into() } else { capitalized(label) })
                     // Fire on click, not mouse-down: the pop-out sits over the
                     // canvas, and closing it mid-press would hand the mouse-up
                     // to the panel underneath, refocusing it.
@@ -331,46 +353,23 @@ impl Workspace {
             .child(
                 div()
                     .debug_selector(|| "sidebar-section-menu".into())
-                    .p_2()
-                    .rounded_xl()
+                    .p(px(6.0))
+                    .rounded(px(14.0))
                     .border_1()
                     .border_color(Theme::global().PANEL_BORDER)
-                    .shadow_lg()
                     .bg(Theme::global().popover_background())
                     .text_color(Theme::global().TEXT)
-                    .text_size(px(12.0))
+                    .font_family(Theme::global().FONT_UI)
+                    .text_size(px(12.5))
                     .flex()
                     .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .h(px(28.0))
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child("Sidebar")
-                            .child(
-                                div()
-                                    .text_size(px(10.0))
-                                    .text_color(Theme::global().TEXT_DIM)
-                                    .child("Scroll to switch"),
-                            ),
-                    )
+                    .gap(px(6.0))
                     .child(pages)
                     .child(
                         div()
                             .border_t_1()
                             .border_color(Theme::global().PANEL_BORDER)
-                            .pt_2()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(9.0))
-                                    .text_color(Theme::global().TEXT_FAINT)
-                                    .child("Actions · click to open"),
-                            )
+                            .pt(px(6.0))
                             .child(actions),
                     ),
             )

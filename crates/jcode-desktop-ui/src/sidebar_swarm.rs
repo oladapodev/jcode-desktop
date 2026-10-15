@@ -69,6 +69,148 @@ pub(super) fn groups(sessions: &[SessionInfo]) -> Groups {
     result
 }
 
+/// The four swarm states the interface distinguishes. Colour carries only
+/// this: done, working, waiting on the user, or idle/queued. Variants are
+/// ordered by urgency, so `min` picks what the user should see first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum AgentState {
+    Waiting,
+    Failed,
+    Working,
+    Done,
+    Idle,
+}
+
+impl AgentState {
+    pub fn from_status(status: Option<&str>) -> Self {
+        match status.map(str::to_ascii_lowercase).as_deref() {
+            Some("working" | "running" | "active" | "streaming") => Self::Working,
+            Some(
+                "waiting" | "blocked" | "needs_input" | "needs-input" | "input" | "paused"
+                | "awaiting_input",
+            ) => Self::Waiting,
+            Some("failed" | "error" | "crashed") => Self::Failed,
+            Some("completed" | "complete" | "done" | "finished" | "ready" | "stopped") => {
+                Self::Done
+            }
+            _ => Self::Idle,
+        }
+    }
+
+    pub fn color(self) -> gpui::Rgba {
+        let theme = Theme::global();
+        match self {
+            Self::Working => theme.ACCENT,
+            Self::Waiting => theme.WARN,
+            Self::Failed => theme.ERROR,
+            Self::Done => theme.OK,
+            Self::Idle => theme.TEXT_FAINT,
+        }
+    }
+
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Working => "working",
+            Self::Waiting => "needs you",
+            Self::Failed => "failed",
+            Self::Done => "finished",
+            Self::Idle => "idle",
+        }
+    }
+}
+
+/// One agent for the compact sidebar summary.
+#[derive(Clone)]
+pub(super) struct Member {
+    pub name: String,
+    pub state: AgentState,
+}
+
+impl Member {
+    pub fn of(session: &SessionInfo) -> Self {
+        let name = session
+            .agent_label
+            .clone()
+            .or_else(|| session.title.clone())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| "Agent".into());
+        Self {
+            name,
+            state: AgentState::from_status(session.swarm_status.as_deref()),
+        }
+    }
+}
+
+/// The most urgent state among a coordinator's agents: someone waiting on
+/// the user first, then failure, live work, completion, and idle last.
+pub(super) fn summary_state(members: &[Member]) -> AgentState {
+    members
+        .iter()
+        .map(|member| member.state)
+        .min()
+        .unwrap_or(AgentState::Idle)
+}
+
+/// A status dot. Small and flat: colour is the only signal.
+pub(super) fn dot(state: AgentState, size: f32) -> gpui::Div {
+    div()
+        .flex_none()
+        .size(px(size))
+        .rounded_full()
+        .bg(state.color())
+}
+
+/// Tooltip listing every agent of a coordinator: dot and name per row.
+pub(super) struct SwarmTooltip(pub Vec<Member>);
+
+impl Render for SwarmTooltip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let _render_scope = crate::render_stats::scope("SwarmTooltip");
+        let theme = Theme::global();
+        div()
+            .min_w(px(180.0))
+            .max_w(px(300.0))
+            .px(px(10.0))
+            .py(px(8.0))
+            .rounded(px(10.0))
+            .bg(theme.PANEL_BG)
+            .border_1()
+            .border_color(theme.PANEL_BORDER)
+            .font_family(theme.FONT_UI)
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .children(self.0.iter().map(|member| {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(dot(member.state, 7.0))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_size(px(12.5))
+                            .text_color(theme.TEXT)
+                            .child(member.name.clone()),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.0))
+                            .text_color(match member.state {
+                                AgentState::Idle | AgentState::Done => theme.TEXT_FAINT,
+                                state => state.color(),
+                            })
+                            .child(member.state.word()),
+                    )
+            }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

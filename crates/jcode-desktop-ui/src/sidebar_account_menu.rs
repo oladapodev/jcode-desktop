@@ -188,6 +188,15 @@ fn short_date(timestamp: &str) -> Option<String> {
     Some(format!("{} {day}", MONTHS.get(month.checked_sub(1)?)?))
 }
 
+/// Small medium-weight caption that opens a group in the menu.
+fn menu_label(label: &'static str) -> gpui::Div {
+    div()
+        .text_size(px(11.0))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(Theme::global().TEXT_FAINT)
+        .child(label)
+}
+
 fn dollars(amount: f64) -> String {
     if amount >= 100.0 || (amount.fract() == 0.0 && amount >= 1.0) {
         format!("${amount:.0}")
@@ -645,15 +654,14 @@ impl Workspace {
             .id("account-menu")
             .debug_selector(|| "account-menu".into())
             .w_full()
-            .p_3()
-            .rounded_xl()
-            .border_1()
-            .border_color(theme.PANEL_BORDER)
-            .bg(theme.PANEL_BG)
+            .p(px(10.0))
+            .rounded(px(12.0))
+            .bg(theme.popover_background())
             .flex()
             .flex_col()
-            .gap_3()
-            .text_size(px(11.0))
+            .gap(px(12.0))
+            .font_family(theme.FONT_UI)
+            .text_size(px(12.0))
             .child(
                 div()
                     .flex()
@@ -662,13 +670,15 @@ impl Workspace {
                         div()
                             .debug_selector(|| "account-menu-title".into())
                             .truncate()
-                            .text_size(px(12.0))
+                            .text_size(px(13.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(theme.TEXT)
                             .child(title),
                     )
                     .child(
                         div()
                             .debug_selector(|| "account-menu-plan".into())
+                            .text_size(px(11.0))
                             .text_color(theme.TEXT_DIM)
                             .child(format!("{plan}{status}")),
                     ),
@@ -681,8 +691,8 @@ impl Workspace {
                     .debug_selector(|| "account-menu-usage".into())
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .child(div().text_color(theme.TEXT_DIM).child("This month"))
+                    .gap(px(6.0))
+                    .child(menu_label("This month"))
                     .child(
                         div()
                             .text_size(px(13.0))
@@ -697,10 +707,10 @@ impl Workspace {
                     };
                     usage = usage.child(
                         div()
-                            .h(px(4.0))
+                            .h(px(3.0))
                             .w_full()
                             .rounded_full()
-                            .bg(theme.INLINE_CODE_BG)
+                            .bg(theme.TEXT.opacity(0.08))
                             .child(
                                 div()
                                     .h_full()
@@ -711,7 +721,12 @@ impl Workspace {
                     );
                 }
                 if let Some(reset) = snapshot.reset_line() {
-                    usage = usage.child(div().text_color(theme.TEXT_DIM).child(reset));
+                    usage = usage.child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(theme.TEXT_DIM)
+                            .child(reset),
+                    );
                 }
                 usage
             }
@@ -727,7 +742,7 @@ impl Workspace {
         // Plan: switch in place, or upgrade through Checkout.
         if let Some(snapshot) = snapshot.filter(|s| !s.legacy()) {
             let current = snapshot.plan_usd();
-            let mut chips = div().flex().flex_wrap().gap_1();
+            let mut chips = div().flex().flex_wrap().gap(px(4.0));
             for amount in PLAN_CHOICES {
                 let selected = current == Some(amount);
                 let confirming = menu.confirm_plan == Some(amount);
@@ -739,16 +754,18 @@ impl Workspace {
                     div()
                         .id(("account-plan", amount as usize))
                         .debug_selector(move || format!("account-plan-{amount}"))
-                        .px_2()
-                        .py(px(3.0))
-                        .rounded_full()
+                        .h(px(24.0))
+                        .px(px(9.0))
+                        .flex()
+                        .items_center()
+                        .rounded(px(7.0))
                         .cursor_pointer()
                         .bg(if selected {
                             theme.ACCENT
                         } else if confirming || pending {
                             theme.ACCENT_DIM
                         } else {
-                            theme.INLINE_CODE_BG
+                            theme.TEXT.opacity(0.06)
                         })
                         .text_color(if selected {
                             theme.BG
@@ -758,37 +775,47 @@ impl Workspace {
                             theme.TEXT_DIM
                         })
                         .when(!selected, |el| {
-                            el.hover(|el| el.bg(theme.HEADER_BG).text_color(theme.TEXT))
+                            el.hover(|el| el.bg(theme.TEXT.opacity(0.1)).text_color(theme.TEXT))
                         })
                         .child(format!("${amount}"))
                         .on_click(cx.listener(move |this, _, _, cx| this.choose_plan(amount, cx))),
                 );
             }
             let heading = if current.is_some() {
-                "Plan · per month"
+                "Plan per month"
             } else {
-                "Upgrade · per month"
+                "Upgrade per month"
             };
+            // Only the confirm step stays visible. The pricing note is detail.
             let hint = match (menu.confirm_plan, current) {
-                (Some(next), Some(_)) => Some(format!(
-                    "Tap ${next} again to switch. Your card on file is used from the next bill."
-                )),
+                (Some(next), Some(_)) => Some(format!("Tap ${next} again to switch")),
+                _ => None,
+            };
+            let note: Option<&'static str> = match (menu.confirm_plan, current) {
+                (Some(_), Some(_)) => Some("Your card on file is used from the next bill."),
                 (_, None) if menu.awaiting_checkout.is_none() => {
-                    Some("Each $10 includes $20 of usage. Pay with Link or a saved card.".into())
+                    Some("Each $10 includes $20 of usage. Pay with Link or a saved card.")
                 }
                 _ => None,
             };
             let mut section = div()
+                .id("account-menu-plans")
                 .debug_selector(|| "account-menu-plans".into())
                 .flex()
                 .flex_col()
-                .gap_1()
-                .child(div().text_color(theme.TEXT_DIM).child(heading))
+                .gap(px(6.0))
+                .when_some(note, |el, note| {
+                    el.tooltip(move |_, cx| {
+                        cx.new(|_| remotes::HeaderTooltip(note.into())).into()
+                    })
+                })
+                .child(menu_label(heading))
                 .child(chips);
             if let Some(hint) = hint {
                 section = section.child(
                     div()
                         .debug_selector(|| "account-menu-plan-hint".into())
+                        .text_size(px(11.0))
                         .text_color(theme.TEXT_DIM)
                         .child(hint),
                 );
@@ -798,7 +825,7 @@ impl Workspace {
 
         // Monthly spending limit.
         if let Some(current) = snapshot.and_then(Snapshot::limit_cents) {
-            let mut chips = div().flex().flex_wrap().gap_1();
+            let mut chips = div().flex().flex_wrap().gap(px(4.0));
             for amount in LIMIT_CHOICES {
                 let selected = current == amount * 100;
                 let pending = menu.busy == Some(Busy::Limit(amount));
@@ -806,18 +833,20 @@ impl Workspace {
                     div()
                         .id(("account-limit", amount as usize))
                         .debug_selector(move || format!("account-limit-{amount}"))
-                        .px_2()
-                        .py(px(3.0))
-                        .rounded_full()
+                        .h(px(24.0))
+                        .px(px(9.0))
+                        .flex()
+                        .items_center()
+                        .rounded(px(7.0))
                         .cursor_pointer()
                         .bg(if selected {
                             theme.ACCENT
                         } else {
-                            theme.INLINE_CODE_BG
+                            theme.TEXT.opacity(0.06)
                         })
                         .text_color(if selected { theme.BG } else { theme.TEXT_DIM })
                         .when(!selected, |el| {
-                            el.hover(|el| el.bg(theme.HEADER_BG).text_color(theme.TEXT))
+                            el.hover(|el| el.bg(theme.TEXT.opacity(0.1)).text_color(theme.TEXT))
                         })
                         .when(pending, |el| el.opacity(0.6))
                         .child(format!("${amount}"))
@@ -830,8 +859,8 @@ impl Workspace {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .child(div().text_color(theme.TEXT_DIM).child("Monthly limit"))
+                    .gap(px(6.0))
+                    .child(menu_label("Monthly limit"))
                     .child(chips),
             );
         }
@@ -841,6 +870,7 @@ impl Workspace {
             body = body.child(
                 div()
                     .debug_selector(|| "account-menu-message".into())
+                    .text_size(px(11.5))
                     .text_color(if is_error {
                         theme.ERROR
                     } else {
@@ -854,30 +884,26 @@ impl Workspace {
             div()
                 .id(id)
                 .debug_selector(move || id.into())
-                .h(px(28.0))
-                .px_3()
+                .h(px(32.0))
+                .px(px(8.0))
                 .flex()
                 .items_center()
-                .rounded_full()
+                .rounded(px(8.0))
                 .cursor_pointer()
-                .bg(if danger {
-                    theme.ERROR.opacity(0.12)
-                } else {
-                    theme.INLINE_CODE_BG
-                })
+                .text_size(px(12.5))
                 .text_color(if danger { theme.ERROR } else { theme.TEXT })
                 .hover(move |el| {
                     el.bg(if danger {
-                        theme.ERROR.opacity(0.2)
+                        theme.ERROR.opacity(0.1)
                     } else {
-                        theme.HEADER_BG
+                        theme.TEXT.opacity(0.06)
                     })
                 })
                 .child(label)
         };
         let busy = menu.busy;
         let subscribed = snapshot.is_some_and(Snapshot::has_billing);
-        let mut actions = div().flex().flex_col().gap_1();
+        let mut actions = div().mx(px(-4.0)).flex().flex_col();
         if menu.needs_sign_in {
             actions = actions.child(
                 action("account-menu-sign-in-again", "Sign in again".into(), false)

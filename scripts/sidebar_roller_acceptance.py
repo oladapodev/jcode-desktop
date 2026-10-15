@@ -136,7 +136,7 @@ def verify(output, env, root):
         outside()
         # No more wheel events: persistence must hold for the page selected by
         # exactly four notches, rather than finding Theme again after dismissal.
-        ui.wait_frame(stage, lambda image: visible(image, "Choose a palette", stage))
+        ui.wait_frame(stage, lambda image: visible(image, "Midnight", stage))
         unchanged("theme-remains-after-collapse")
         report["theme_remains_after_collapse"] = True
 

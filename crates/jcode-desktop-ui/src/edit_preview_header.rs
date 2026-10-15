@@ -73,15 +73,16 @@ impl TimedPreview {
             .flex_1()
             .truncate()
             .font_family(theme.FONT_MONO)
-            .text_color(theme.TEXT_DIM)
+            .text_color(theme.TEXT_FAINT)
             .child(self.header.leaf("path", file.path.clone(), window, cx));
         let counts = super::super::counts(file)
             .id("edit-change-counts")
             .debug_selector(move || format!("edit-change-counts-{index}").into())
-            .text_size(px(11.))
-            .rounded_full()
+            .text_size(px(11.5))
+            .px_1p5()
+            .rounded(px(8.))
             .cursor_pointer()
-            .hover(|style| style.bg(theme.ACCENT_DIM))
+            .hover(|style| style.bg(theme.USER_BG))
             // The counts own their click. Never toggle the inline preview or
             // let the workspace mouse-up handler refocus the source panel.
             .on_mouse_down(
@@ -118,10 +119,10 @@ impl TimedPreview {
             .bg(theme.CODE_BG)
             .when(
                 self.timer.expansion_fraction() == 0. && !self.header.review.failed,
-                |el| el.rounded_b_lg(),
+                |el| el.rounded_b(px(14.)),
             )
             .min_w_0()
-            .text_size(px(11.))
+            .text_size(px(11.5))
             .line_height(px(16.))
             .child(path)
             .when(!status.is_empty(), |el| {
@@ -144,16 +145,17 @@ impl TimedPreview {
                     .debug_selector(move || format!("edit-preview-intent-row-{index}").into())
                     // Overflow clipping is rectangular in GPUI. Round the
                     // painted top row itself, not just its outer container.
-                    .rounded_t_lg()
+                    .rounded_t(px(14.))
                     .bg(theme.CODE_HEADER_BG)
                     .px_3()
-                    .py_1()
+                    .pt_1p5()
+                    .pb_0p5()
                     .flex()
                     .items_center()
                     .gap_2()
                     .min_w_0()
                     .line_height(px(20.))
-                    .text_size(px(12.))
+                    .text_size(px(12.5))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.TEXT)
                     .child(crate::tool_icon::render_badge_with_label(

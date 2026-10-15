@@ -324,8 +324,8 @@ impl Workspace {
             .debug_selector(|| "settings-applets".into())
             .flex()
             .flex_col()
-            .gap_1()
-            .child(div().pt_2().text_color(theme.TEXT_DIM).child("Applets"));
+            .gap(px(2.0))
+            .child(super::settings_rows::section_label("Applets"));
         for (id, title, granted, decided) in rows {
             let summary = if !decided {
                 "Not asked yet".to_owned()
@@ -341,21 +341,30 @@ impl Workspace {
             let revoke_id = id.clone();
             list = list.child(
                 div()
-                    .px_3()
-                    .py_1()
-                    .rounded_full()
-                    .bg(theme.PANEL_BG)
+                    .h(px(super::settings_rows::ROW_HEIGHT))
+                    .px(px(10.0))
+                    .rounded(px(super::settings_rows::ROW_RADIUS))
+                    .hover(|el| el.bg(theme.TOOL_BG))
+                    .text_size(px(13.0))
                     .flex()
                     .items_center()
                     .gap_2()
                     .child(div().flex_1().min_w_0().truncate().child(title))
-                    .child(div().text_color(theme.TEXT_DIM).truncate().child(summary))
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(theme.TEXT_DIM)
+                            .truncate()
+                            .child(summary),
+                    )
                     .when(decided, |el| {
                         el.child(
                             div()
                                 .id(gpui::ElementId::Name(format!("applet-revoke:{id}").into()))
                                 .px_2()
-                                .rounded_full()
+                                .py(px(2.0))
+                                .rounded(px(6.0))
+                                .text_size(px(12.0))
                                 .cursor_pointer()
                                 .bg(theme.TOOL_BG)
                                 .hover(|el| el.bg(theme.ACCENT_DIM))

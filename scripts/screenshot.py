@@ -36,6 +36,8 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--binary", type=Path, default=repo / "target/debug/jcode-desktop")
     parser.add_argument("--no-build", action="store_true")
+    parser.add_argument("--files", action="store_true",
+                        help="Files sidebar beside a file preview, a terminal and a side document")
     parser.add_argument("--accounts", action="store_true",
                         help="open the Accounts panel with offline multi-account fixtures")
     parser.add_argument("--sign-in-steps", action="store_true",
@@ -74,9 +76,13 @@ def main():
     parser.add_argument("--tab-actions-interact", action="store_true",
                         help="verify hover-only tab actions and shortcut tooltips")
     parser.add_argument("--worktrees", action="store_true", help="show isolated Git worktrees in the sidebar")
+    parser.add_argument("--hide-sidebar", action="store_true", help="start with the sidebar hidden (Ctrl+B), showing the icon rail on wide windows")
     parser.add_argument("--collections", nargs="?", const="1", choices=("1", "menu", "form"),
                         help="show user-created collections above project groups (menu: a row's Move menu open, form: the editor)")
     parser.add_argument("--swarm", action="store_true", help="load nested swarm fixtures (children remain hidden in the sidebar)")
+    parser.add_argument("--view", choices=("overview", "machines"),
+                        help="open the overview or Machines panel shortly after launch")
+    parser.add_argument("--minimap", action="store_true", help="show the workspace minimap")
     parser.add_argument("--swarm-interact", action="store_true",
                         help="verify swarm showcase stays absent and lead selection remains stable (implies --swarm)")
     parser.add_argument("--notification", action="store_true", help="show the shortcut notification design fixture")
@@ -144,6 +150,8 @@ def main():
                         help="scroll the transcript upward on the private display before capture")
     parser.add_argument("--learn-stage", type=int, choices=(1, 2, 3),
                         help="show the staged tutorial in the top-left Learn tab")
+    parser.add_argument("--sidebar-view", choices=("settings", "theme", "accounts"),
+                        help="open this sidebar page at startup")
     parser.add_argument("--panels", type=int, choices=range(1, 7), default=1,
                         help="show a connected folder group with its middle panel focused")
     parser.add_argument("--focus-panel", type=int,
@@ -467,12 +475,20 @@ def main():
             env["JCODE_DESKTOP_SCREENSHOT_UPDATE_CLICKED"] = "1"
         if args.worktrees:
             env["JCODE_DESKTOP_SCREENSHOT_WORKTREES"] = "1"
+        if args.hide_sidebar:
+            env["JCODE_DESKTOP_SCREENSHOT_HIDE_SIDEBAR"] = "1"
         if args.collections:
             env["JCODE_DESKTOP_SCREENSHOT_COLLECTIONS"] = args.collections
         if args.swarm:
             env["JCODE_DESKTOP_SCREENSHOT_SWARM"] = "1"
+        if args.view:
+            env["JCODE_DESKTOP_SCREENSHOT_VIEW"] = args.view
+        if args.minimap:
+            env["JCODE_DESKTOP_SCREENSHOT_MINIMAP"] = "1"
         if args.changelog:
             env["JCODE_DESKTOP_SCREENSHOT_CHANGELOG"] = "1"
+        if args.files:
+            env["JCODE_DESKTOP_SCREENSHOT_FILES"] = "1"
         if args.accounts:
             env["JCODE_DESKTOP_SCREENSHOT_ACCOUNTS"] = "1"
         if args.sign_in_steps:
@@ -511,6 +527,8 @@ def main():
             env["JCODE_DESKTOP_SCREENSHOT_MERMAID_SOURCE"] = args.mermaid_source.read_text()
         if args.learn_stage is not None:
             env["JCODE_DESKTOP_SCREENSHOT_LEARN_STAGE"] = str(args.learn_stage)
+        if args.sidebar_view:
+            env["JCODE_DESKTOP_SCREENSHOT_SIDEBAR_VIEW"] = args.sidebar_view
         env["JCODE_DESKTOP_SCREENSHOT_PANELS"] = str(args.panels)
         if args.model_interact:
             env["JCODE_DESKTOP_SCREENSHOT_MODELS"] = "1"
@@ -564,6 +582,8 @@ def main():
                 if args.transcript == "publish":
                     # The fixture adds the publish tracker beside the selfdev panel.
                     expected_widths = "widths="
+                if args.files:
+                    expected_widths = "widths=0.33,0.33,0.33"
                 while not state.exists() or expected_widths not in state.read_text():
                     if app.poll() is not None or time.monotonic() > deadline:
                         app_log.seek(0)
@@ -580,6 +600,9 @@ def main():
                     subprocess.run(["xdotool", "key", "--clearmodifiers", "Escape"],
                                    env=env, cwd=root, check=True, timeout=10)
                     time.sleep(0.3)
+                if args.view:
+                    # The app opens the view 3.2s after launch, after this Escape.
+                    time.sleep(2.0)
                 if args.selection_drag:
                     x1, y1, x2, y2 = map(str, args.selection_drag)
                     subprocess.run(["xdotool", "mousemove", x1, y1, "mousedown", "1",
