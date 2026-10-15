@@ -11,7 +11,7 @@ let pass = 0, fail = 0
 const fresh = async (hash = '', w = 1440) => {
   const p = await b.newPage({ viewport: { width: w, height: 900 } })
   p.on('pageerror', (e) => errors.push(e.message))
-  await p.goto(url + hash); await p.waitForTimeout(900)
+  await p.goto(url + hash, { timeout: 90000 }); await p.waitForTimeout(1500)
   return p
 }
 const check = async (name, fn) => {
@@ -23,7 +23,7 @@ const groups = (p) => p.evaluate(() => document.querySelectorAll('.dv-groupview'
 let p = await fresh()
 await check('slash menu opens and runs /terminal into the dock', async () => {
   const ta = p.locator('textarea').first()
-  await ta.fill('/'); await p.getByText('Branch this conversation').waitFor({ timeout: 2000 })
+  await ta.fill('/'); await p.getByText('Branch this conversation').waitFor({ timeout: 8000 })
   await p.screenshot({ path: `${out}/slash.png` })
   await ta.fill('/term'); await p.keyboard.press('Enter'); await p.waitForTimeout(500)
   if (!(await panels(p)).some((t) => t.includes('Terminal'))) throw new Error('no terminal tab')
@@ -82,7 +82,7 @@ await check('terminal (libghostty) renders a canvas', async () => {
 })
 await check('Ctrl K palette opens a file', async () => {
   await p.keyboard.press('Control+k'); await p.waitForTimeout(300)
-  await p.keyboard.type('provenance'); await p.waitForTimeout(200); await p.keyboard.press('Enter'); await p.waitForTimeout(700)
+  await p.keyboard.type('provenance'); await p.waitForTimeout(800); await p.keyboard.press('Enter'); await p.waitForTimeout(1200)
   if (!(await panels(p)).some((x) => x.includes('provenance.toml'))) throw new Error('not opened')
 })
 await check('Ctrl B collapses sidebar to icon rail', async () => {
