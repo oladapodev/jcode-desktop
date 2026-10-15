@@ -9,6 +9,13 @@ import { Popover, PopoverTrigger, PopoverContent, Row, Kbd, Tip, Hr } from '@/co
 import { MachineMark } from '@/components/marks'
 import { cn } from '@/lib/cn'
 import { toast } from 'sonner'
+import type { PaneKind } from '@/lib/store'
+
+const pane = (k: PaneKind) => {
+  const d = useApp.getState().dock
+  useApp.getState().set({ view: 'workspace' })
+  if (d) import('./Workspace').then((w) => w.openPane(d, k, { direction: 'right' }))
+}
 
 const modes = {
   agent: { label: 'Agent', icon: Zap, desc: 'Edits files and runs commands' },
@@ -53,8 +60,8 @@ export function Composer({ variant = 'dock', running = true, onStop }: { variant
     setText('')
     const map: Record<string, () => void> = {
       settings: () => go('settings', 'general'), login: () => go('settings', 'models'), machines: () => go('machines'),
-      swarm: () => go('agents'), terminal: () => useApp.getState().openInspector('terminal'), diff: () => useApp.getState().openInspector('changes'),
-      usage: () => useApp.getState().openInspector('usage'), plan: () => set({ mode: 'plan' }),
+      swarm: () => go('agents'), terminal: () => pane('terminal'), diff: () => pane('changes'),
+      usage: () => pane('usage'), plan: () => set({ mode: 'plan' }),
       fork: () => toast('Forked into a new session', { description: 'The original keeps running.' }),
     }
     if (map[cmd]) map[cmd]()
@@ -69,13 +76,13 @@ export function Composer({ variant = 'dock', running = true, onStop }: { variant
 
   const hero = variant === 'hero'
   return (
-    <div className={cn('relative', hero ? 'w-full' : 'mx-auto w-full max-w-[760px] px-6 pb-5')}>
+    <div className={cn('relative', hero ? 'w-full' : 'mx-auto w-full max-w-[740px] px-4 pb-3')}>
       {/* Slash / mention menu */}
       <AnimatePresence>
         {flat.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}
             transition={{ duration: 0.14 }}
-            className={cn('absolute bottom-full z-40 mb-2 max-h-[340px] overflow-y-auto rounded-[14px] border border-seam-2 bg-soot/95 p-1.5 shadow-[0_24px_60px_-12px_rgb(0_0_0/.6)] backdrop-blur-xl', hero ? 'inset-x-0' : 'inset-x-6')}>
+            className={cn('absolute bottom-full z-40 mb-2 max-h-[340px] overflow-y-auto rounded-[14px] border border-seam-2 bg-soot p-1.5 shadow-[0_24px_60px_-12px_rgb(0_0_0/.6)]', hero ? 'inset-x-0' : 'inset-x-6')}>
             {flat.map((it, i) => {
               const Ic = (Icons as unknown as Record<string, Icons.LucideIcon>)[it.icon] ?? Sparkles
               const header = i === 0 || flat[i - 1].group !== it.group
@@ -97,9 +104,9 @@ export function Composer({ variant = 'dock', running = true, onStop }: { variant
       </AnimatePresence>
 
       <div className={cn(
-        'group/c relative rounded-[20px] border bg-slab transition-[border-color,box-shadow] duration-200',
-        'border-seam-2 shadow-[0_1px_0_rgb(255_255_255/.04)_inset,0_10px_30px_-12px_rgb(0_0_0/.5)]',
-        'focus-within:border-brass/45 focus-within:shadow-[0_0_0_4px_rgb(var(--glow)/.10),0_10px_30px_-12px_rgb(0_0_0/.5)]',
+        'group/c relative rounded-[20px] bg-slab-2 transition-[box-shadow] duration-200',
+        'shadow-[0_1px_2px_rgb(0_0_0/.12),0_12px_32px_-14px_rgb(0_0_0/.45)] ring-1 ring-seam',
+        'focus-within:ring-brass/40 focus-within:shadow-[0_0_0_4px_rgb(var(--glow)/.08),0_12px_32px_-14px_rgb(0_0_0/.45)]',
       )}>
         <AnimatePresence>
           {attachments.length > 0 && (
@@ -144,7 +151,7 @@ export function Composer({ variant = 'dock', running = true, onStop }: { variant
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
           <Popover>
             <Tip label="Attach"><PopoverTrigger asChild>
-              <button className="grid size-8 place-items-center rounded-full text-dust transition-colors hover:bg-slab-2 hover:text-bone"><Plus size={17} /></button>
+              <button className="grid size-8 place-items-center rounded-full text-dust transition-colors hover:bg-lift hover:text-bone"><Plus size={17} /></button>
             </PopoverTrigger></Tip>
             <PopoverContent side="top" className="w-[250px]">
               <Row icon={<ImageIcon size={15} />} title="Screenshot or image" right={<span className="flex gap-0.5"><Kbd>Ctrl</Kbd><Kbd>V</Kbd></span>} onClick={() => setAttachments([...attachments, 'korope-ref.png'])} />
@@ -159,9 +166,9 @@ export function Composer({ variant = 'dock', running = true, onStop }: { variant
           {/* Mode */}
           <Popover>
             <PopoverTrigger asChild>
-              <button className={cn('flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sec font-medium transition-colors hover:bg-slab-2',
+              <button className={cn('flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sec font-medium transition-colors hover:bg-lift',
                 mode === 'agent' ? 'text-dust hover:text-bone' : 'bg-brass/12 text-brass hover:bg-brass/16')}>
-                <ModeIcon size={14} />{modes[mode].label}
+                <ModeIcon size={14} /><span className="hidden @[400px]:inline">{modes[mode].label}</span>
               </button>
             </PopoverTrigger>
             <PopoverContent side="top" className="w-[280px]">
@@ -176,15 +183,15 @@ export function Composer({ variant = 'dock', running = true, onStop }: { variant
 
           {/* Model */}
           <ModelPicker trigger={
-            <button className="flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sec font-medium text-dust transition-colors hover:bg-slab-2 hover:text-bone">
-              <Logo name={m.provider} size={14} tinted />{m.name}<ChevronDown size={13} className="text-ash" />
+            <button className="flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sec font-medium text-dust transition-colors hover:bg-lift hover:text-bone">
+              <Logo name={m.provider} size={14} tinted /><span className="hidden whitespace-nowrap @[460px]:inline">{m.name}</span><ChevronDown size={13} className="text-ash" />
             </button>} />
 
           {/* Effort */}
           <Popover>
             <PopoverTrigger asChild>
-              <button className="flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sec font-medium text-dust transition-colors hover:bg-slab-2 hover:text-bone">
-                <EffortBars n={efforts.find((e) => e.id === effort)!.bars} />{efforts.find((e) => e.id === effort)!.label}
+              <button className="flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sec font-medium text-dust transition-colors hover:bg-lift hover:text-bone">
+                <EffortBars n={efforts.find((e) => e.id === effort)!.bars} /><span className="hidden @[520px]:inline">{efforts.find((e) => e.id === effort)!.label}</span>
               </button>
             </PopoverTrigger>
             <PopoverContent side="top" className="w-[240px]">
@@ -200,7 +207,7 @@ export function Composer({ variant = 'dock', running = true, onStop }: { variant
           {!hero && <ContextRing value={0.62} />}
           <Tip label="Hold to talk" keys="Ctrl Shift V">
             <button onMouseDown={() => setRecording(true)} onMouseUp={() => { setRecording(false); toast('Voice sent to the agent', { description: '"Make the roof a bit taller"' }) }} onMouseLeave={() => recording && setRecording(false)}
-              className={cn('grid size-8 place-items-center rounded-full transition-colors', recording ? 'bg-rose/15 text-rose' : 'text-dust hover:bg-slab-2 hover:text-bone')}>
+              className={cn('grid size-8 place-items-center rounded-full transition-colors', recording ? 'bg-rose/15 text-rose' : 'text-dust hover:bg-lift hover:text-bone')}>
               <Mic size={16} />
             </button>
           </Tip>
@@ -222,7 +229,7 @@ export function Composer({ variant = 'dock', running = true, onStop }: { variant
       </div>
 
       {!hero && (
-        <div className="mt-2 flex items-center justify-between px-2 text-meta text-ash">
+        <div className="mt-1.5 hidden items-center justify-between px-2 text-meta text-ash @[520px]:flex">
           <button onClick={() => go('machines')} className="flex items-center gap-1.5 rounded-[6px] px-1 py-0.5 hover:text-dust">
             <MachineMark m={mc} size={16} className="rounded-[5px] border-0 bg-transparent" />
             Running on <span className={cn('font-medium', kindMeta[mc.kind].color)}>{mc.name}</span>
@@ -285,7 +292,7 @@ function ContextRing({ value }: { value: number }) {
   const r = 7, c = 2 * Math.PI * r
   return (
     <Tip label={`${Math.round(value * 100)}% of context used. Compacts automatically at 90%.`}>
-      <button onClick={() => useApp.getState().openInspector('usage')} className="mr-0.5 flex h-8 items-center gap-1.5 rounded-full px-2 text-meta text-ash hover:bg-slab-2 hover:text-dust">
+      <button onClick={() => pane('usage')} className="mr-0.5 hidden h-8 items-center gap-1.5 rounded-full px-2 text-meta text-ash hover:bg-lift hover:text-dust @[560px]:flex">
         <svg width="16" height="16" viewBox="0 0 18 18" className="-rotate-90"><circle cx="9" cy="9" r={r} fill="none" stroke="var(--seam-2)" strokeWidth="2.4" />
           <circle cx="9" cy="9" r={r} fill="none" stroke="var(--dust)" strokeWidth="2.4" strokeDasharray={`${c * value} ${c}`} /></svg>
         {Math.round(value * 100)}%

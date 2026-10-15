@@ -8,7 +8,7 @@ All data is mock data. Nothing talks to a real jcode server.
 
 `dist/index.html` is a single self-contained file. Open it in any browser.
 
-Deep links jump to a screen: `#home`, `#agents`, `#machines`, `#add-machine`,
+Deep links jump to a screen: `#home`, `#agents`, `#machines`, `#add-machine`, `#code`, `#review`, `#browser`, `#terminal`, `#rail`, `?theme=paper`,
 `#apps`, `#canvas`, `#palette`, `#stream`, `#inspector/changes`,
 `#settings/models`, `#theme/paper`.
 

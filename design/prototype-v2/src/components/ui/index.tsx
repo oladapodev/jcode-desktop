@@ -7,12 +7,12 @@ import { cn } from '@/lib/cn'
 type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'quiet' | 'danger'
 type BtnSize = 'xs' | 'sm' | 'md'
 const btnBase =
-  'relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[9px] font-medium select-none transition-[background,border-color,color,box-shadow,transform] duration-150 ease-out-soft active:translate-y-px disabled:opacity-40 disabled:pointer-events-none'
+  'relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[9px] font-medium select-none outline-none transition-[background,color,box-shadow,transform,filter] duration-150 ease-out-soft active:scale-[.97] focus-visible:ring-2 focus-visible:ring-brass/50 focus-visible:ring-offset-1 focus-visible:ring-offset-ink disabled:opacity-40 disabled:pointer-events-none [&_svg]:shrink-0'
 const btnVariants: Record<BtnVariant, string> = {
   primary:
-    'bg-brass text-brass-ink shadow-[inset_0_1px_0_rgb(255_255_255/.25),0_1px_2px_rgb(0_0_0/.35),0_0_0_1px_rgb(0_0_0/.15)] hover:brightness-[1.06]',
+    'bg-brass text-brass-ink shadow-[inset_0_1px_0_rgb(255_255_255/.28),0_1px_2px_rgb(0_0_0/.25)] hover:brightness-[1.07] active:brightness-95',
   secondary:
-    'bg-slab-2 text-bone border border-seam-2 shadow-[inset_0_1px_0_rgb(255_255_255/.04)] hover:bg-lift hover:border-seam-2',
+    'bg-slab-2 text-bone shadow-[inset_0_0_0_1px_var(--seam-2)] hover:bg-lift',
   ghost: 'text-dust hover:text-bone hover:bg-slab-2',
   quiet: 'text-ash hover:text-bone',
   danger: 'text-rose hover:bg-rose/10',
@@ -36,7 +36,7 @@ export const IconButton = React.forwardRef<
   <button
     ref={ref}
     className={cn(
-      'relative grid place-items-center rounded-[8px] text-dust transition-colors duration-150 hover:bg-slab-2 hover:text-bone active:translate-y-px',
+      'relative grid place-items-center rounded-[8px] text-dust outline-none transition-[background,color,transform] duration-150 hover:bg-slab-2 hover:text-bone active:scale-[.92] focus-visible:ring-2 focus-visible:ring-brass/50',
       size === 'md' ? 'size-8' : 'size-7',
       active && 'bg-brass/12 text-brass hover:bg-brass/16 hover:text-brass',
       className,
@@ -100,7 +100,7 @@ export function PopoverContent({ className, children, side = 'bottom', align = '
         sideOffset={sideOffset}
         collisionPadding={12}
         className={cn(
-          'pop z-[90] rounded-[14px] border border-seam-2 bg-soot/95 p-1.5 text-bone shadow-[0_24px_60px_-12px_rgb(0_0_0/.6),0_0_0_1px_rgb(0_0_0/.25)] backdrop-blur-xl outline-none',
+          'pop z-[90] rounded-[14px] border border-seam-2 bg-soot p-1.5 text-bone shadow-[0_24px_60px_-12px_rgb(0_0_0/.6),0_0_0_1px_rgb(0_0_0/.25)] outline-none',
           className,
         )}
         {...p}
@@ -121,7 +121,7 @@ export function MenuContent({ className, children, ...p }: React.ComponentProps<
         sideOffset={6}
         collisionPadding={12}
         className={cn(
-          'pop z-[90] min-w-[200px] rounded-[12px] border border-seam-2 bg-soot/95 p-1 text-bone shadow-[0_24px_60px_-12px_rgb(0_0_0/.6)] backdrop-blur-xl outline-none',
+          'pop z-[90] min-w-[200px] rounded-[12px] border border-seam-2 bg-soot p-1 text-bone shadow-[0_24px_60px_-12px_rgb(0_0_0/.6)] outline-none',
           className,
         )}
         {...p}
@@ -194,7 +194,7 @@ export function Segmented<T extends string>({
   layoutId: string; size?: 'sm' | 'md'; className?: string
 }) {
   return (
-    <div className={cn('inline-flex rounded-[10px] border border-seam bg-soot p-[3px]', className)}>
+    <div className={cn('inline-flex rounded-[10px] bg-soot p-[3px] shadow-[inset_0_0_0_1px_var(--seam)]', className)}>
       {items.map((it) => (
         <button
           key={it.value}
@@ -208,7 +208,7 @@ export function Segmented<T extends string>({
           {value === it.value && (
             <motion.span
               layoutId={layoutId}
-              className="absolute inset-0 rounded-[7px] border border-seam-2 bg-slab-2 shadow-[0_1px_2px_rgb(0_0_0/.3)]"
+              className="absolute inset-0 rounded-[7px] bg-slab-2 shadow-[0_1px_2px_rgb(0_0_0/.25),inset_0_0_0_1px_var(--seam-2)]"
               transition={{ type: 'spring', stiffness: 520, damping: 38 }}
             />
           )}

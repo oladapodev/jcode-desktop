@@ -25,7 +25,7 @@ export function HomeView() {
     <div className="relative min-h-0 flex-1 overflow-y-auto">
       {/* soft light from above, the only decorative gradient in the app */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(60%_100%_at_50%_0%,rgb(var(--glow)/.09),transparent)]" />
-      <div className="relative mx-auto flex max-w-[720px] flex-col px-8 pb-16 pt-[11vh]">
+      <div className="@container relative mx-auto flex max-w-[720px] flex-col px-6 pb-16 pt-[9vh] md:px-8">
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
           <JMark size={34} className="mb-5" />
           <h1 className="m-0 text-[30px] font-semibold leading-tight tracking-[-0.025em]">{greet}, dev.</h1>
@@ -52,10 +52,10 @@ export function HomeView() {
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.14 }} className="mt-10 grid grid-cols-2 gap-2.5">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.14 }} className="mt-10 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {starts.map((s) => (
-            <button key={s.title} className="group flex items-start gap-3 rounded-[14px] border border-seam bg-soot p-3.5 text-left transition-colors hover:border-seam-2 hover:bg-slab">
-              <span className="grid size-8 shrink-0 place-items-center rounded-[9px] border border-seam-2 bg-slab-2 text-dust transition-colors group-hover:text-brass"><s.icon size={15} /></span>
+            <button key={s.title} className="group flex items-start gap-3 rounded-[14px] bg-soot p-3.5 text-left transition-colors hover:bg-slab">
+              <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-slab-2 text-dust transition-colors group-hover:text-brass"><s.icon size={15} /></span>
               <span className="min-w-0">
                 <span className="block text-[13.5px] font-medium">{s.title}</span>
                 <span className="block text-sec text-ash">{s.desc}</span>
@@ -66,7 +66,7 @@ export function HomeView() {
 
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="mt-10">
           <h2 className="mb-2 text-[13px] font-semibold text-dust">Pick up where you left off</h2>
-          <div className="overflow-hidden rounded-[14px] border border-seam">
+          <div className="overflow-hidden rounded-[14px] bg-soot">
             {live.map((s, i) => {
               const mm = getMachine(s.machine)
               return (

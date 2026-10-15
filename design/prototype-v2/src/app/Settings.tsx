@@ -29,7 +29,7 @@ export function SettingsView() {
   const { settingsPage, set } = useApp()
   return (
     <div className="flex min-h-0 flex-1">
-      <nav className="w-[232px] shrink-0 overflow-y-auto border-r border-seam px-3 py-6">
+      <nav className="w-[64px] shrink-0 overflow-y-auto border-r border-seam px-2 py-6 md:w-[232px] md:px-3 [&_span.relative]:hidden md:[&_span.relative]:inline [&>div]:hidden md:[&>div]:block">
         <div className="mb-3 px-2.5 text-[17px] font-semibold tracking-[-0.01em]">Settings</div>
         {pages.map((p) => {
           const active = settingsPage === p.id
@@ -61,7 +61,7 @@ function Group({ title, children }: { title?: string; children: React.ReactNode 
   return (
     <section className="mb-7">
       {title && <h2 className="mb-2 px-1 text-[13px] font-semibold text-dust">{title}</h2>}
-      <div className="overflow-hidden rounded-[14px] border border-seam bg-soot [&>*+*]:border-t [&>*+*]:border-seam">{children}</div>
+      <div className="overflow-hidden rounded-[14px] bg-soot [&>*+*]:border-t [&>*+*]:border-seam">{children}</div>
     </section>
   )
 }
@@ -103,7 +103,7 @@ function Page({ id }: { id: string }) {
     case 'account':
       return <>
         <H t="Account and sync" d="Sign in once. Sessions, settings and logins follow you everywhere." />
-        <div className="mb-7 flex items-center gap-4 rounded-[16px] border border-seam bg-soot p-4">
+        <div className="mb-7 flex items-center gap-4 rounded-[16px] bg-soot p-4">
           <span className="grid size-12 place-items-center rounded-full bg-[conic-gradient(from_200deg,#e0b46c,#b77f3b,#6d4b25,#e0b46c)] text-[18px] font-bold text-brass-ink">D</span>
           <div className="flex-1"><div className="text-[15px] font-semibold">dev</div><div data-secret className="text-sec text-ash">dev@example.com</div></div>
           <Badge tone="brass">Pro</Badge><Button size="sm" variant="ghost">Sign out</Button>

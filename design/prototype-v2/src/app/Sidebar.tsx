@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import {
   SquarePen, Search, Network, Server, LayoutGrid, Settings2, ChevronRight, GitBranch, Plus, FolderOpen,
-  FolderGit2, Clock3, ChevronsUpDown, Check, Cloud, LogOut, Sparkles, Radio, Home,
+  FolderGit2, Clock3, ChevronsUpDown, Check, Cloud, LogOut, Sparkles, Radio, LayoutPanelLeft, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 import { useApp, getMachine } from '@/lib/store'
 import { projects as seedProjects, machines, kindMeta } from '@/lib/data'
@@ -11,15 +11,17 @@ import { JMark, MachineMark } from '@/components/marks'
 import { cn } from '@/lib/cn'
 
 export function Sidebar() {
-  const { view, go, sessionId, sessions, openSession, set, machine, stream } = useApp()
+  const { view, go, sessionId, sessions, openSession, set, machine, stream, sidebar } = useApp()
   const [projects, setProjects] = useState(seedProjects)
   const running = sessions.filter((s) => s.status === 'running' || s.status === 'waiting').length
   const nav = [
-    { id: 'home', label: 'Home', icon: Home },
+    { id: 'workspace', label: 'Workspace', icon: LayoutPanelLeft },
     { id: 'agents', label: 'Agents', icon: Network, badge: running },
     { id: 'machines', label: 'Machines', icon: Server },
     { id: 'apps', label: 'Apps & tools', icon: LayoutGrid },
   ] as const
+
+  if (sidebar === 'rail') return <Rail nav={nav} />
 
   return (
     <aside className="relative flex h-full w-full flex-col bg-soot">
@@ -32,11 +34,15 @@ export function Sidebar() {
             <span className="size-[5px] rounded-full bg-sage" /> Synced across 3 devices
           </div>
         </div>
-        {stream && (
+        {stream ? (
           <motion.span initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
             className="flex items-center gap-1 rounded-[6px] bg-rose px-1.5 py-[2px] text-[10px] font-bold tracking-wide text-white">
             <Radio size={10} /> LIVE
           </motion.span>
+        ) : (
+          <Tip label="Collapse sidebar" keys="Ctrl B">
+            <button onClick={() => set({ sidebar: 'rail' })} className="grid size-7 place-items-center rounded-[7px] text-ash hover:bg-slab-2 hover:text-bone"><PanelLeftClose size={15} /></button>
+          </Tip>
         )}
       </div>
 
@@ -112,7 +118,7 @@ export function Sidebar() {
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }} className="overflow-hidden">
                     {list.map((s) => {
-                      const active = s.id === sessionId && view === 'chat'
+                      const active = s.id === sessionId && view === 'workspace'
                       const m = getMachine(s.machine)
                       return (
                         <button key={s.id} onClick={() => openSession(s.id)}
@@ -145,6 +151,44 @@ export function Sidebar() {
       </div>
       {/* reference to machine to keep re-render on change */}
       <span className="hidden">{machine}</span>
+    </aside>
+  )
+}
+
+/* Collapsed sidebar: a 56px icon rail. Everything stays one click away. */
+function Rail({ nav }: { nav: readonly { id: string; label: string; icon: typeof Server; badge?: number }[] }) {
+  const { view, go, set, sessions, sessionId, openSession, machine, stream } = useApp()
+  const m = getMachine(machine)
+  return (
+    <aside className="flex h-full w-full flex-col items-center gap-1 bg-soot py-3">
+      <Tip label="Expand sidebar" keys="Ctrl B" side="right"><button onClick={() => set({ sidebar: 'full' })} className="mb-2 grid size-9 place-items-center rounded-[10px] hover:bg-slab-2"><JMark size={22} /></button></Tip>
+      {stream && <span className="mb-1 rounded-[5px] bg-rose px-1 text-[9px] font-bold text-white">LIVE</span>}
+      <Tip label="New session" keys="Ctrl N" side="right"><button onClick={() => go('home')} className="grid size-9 place-items-center rounded-[10px] bg-slab-2 text-brass hover:bg-lift"><SquarePen size={16} /></button></Tip>
+      <Tip label="Search" keys="Ctrl K" side="right"><button onClick={() => set({ palette: true })} className="grid size-9 place-items-center rounded-[10px] text-dust hover:bg-slab-2 hover:text-bone"><Search size={16} /></button></Tip>
+      <div className="my-2 h-px w-6 bg-seam" />
+      {nav.map((n) => (
+        <Tip key={n.id} label={n.label} side="right">
+          <button onClick={() => go(n.id as never)} className={cn('relative grid size-9 place-items-center rounded-[10px]', view === n.id ? 'bg-slab-2 text-brass' : 'text-dust hover:bg-slab-2 hover:text-bone')}>
+            <n.icon size={16} />
+            {!!n.badge && <span className="absolute right-1.5 top-1.5 size-[6px] rounded-full bg-brass ring-2 ring-soot" />}
+          </button>
+        </Tip>
+      ))}
+      <div className="my-2 h-px w-6 bg-seam" />
+      <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
+        {sessions.map((s) => (
+          <Tip key={s.id} label={s.title} side="right">
+            <button onClick={() => openSession(s.id)}
+              className={cn('relative grid size-9 place-items-center rounded-[10px] text-[12px] font-semibold', s.id === sessionId && view === 'workspace' ? 'bg-slab-2 text-bone' : 'text-ash hover:bg-slab-2 hover:text-bone')}>
+              {s.title.split(' ').slice(0, 2).map((w) => w[0]).join('')}
+              <StatusDot status={s.status} className="absolute bottom-1.5 right-1.5 size-[6px] ring-2 ring-soot" />
+            </button>
+          </Tip>
+        ))}
+      </div>
+      <Tip label={`New sessions run on ${m.name}`} side="right"><button onClick={() => go('machines')} className="grid size-9 place-items-center rounded-[10px] hover:bg-slab-2"><MachineMark m={m} size={26} /></button></Tip>
+      <Tip label="Settings" keys="Ctrl ," side="right"><button onClick={() => go('settings', 'general')} className="grid size-9 place-items-center rounded-[10px] text-dust hover:bg-slab-2 hover:text-bone"><Settings2 size={16} /></button></Tip>
+      <Tip label="Expand sidebar" side="right"><button onClick={() => set({ sidebar: 'full' })} className="grid size-9 place-items-center rounded-[10px] text-ash hover:bg-slab-2 hover:text-bone"><PanelLeftOpen size={16} /></button></Tip>
     </aside>
   )
 }

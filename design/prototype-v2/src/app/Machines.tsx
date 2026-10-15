@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 
 export function PageHead({ title, desc, actions }: { title: string; desc: string; actions?: React.ReactNode }) {
   return (
-    <div className="mb-8 flex items-end gap-6">
+    <div className="mb-8 flex flex-wrap items-end gap-x-6 gap-y-4">
       <div className="min-w-0 flex-1">
         <h1 className="m-0 text-[26px] font-semibold tracking-[-0.025em]">{title}</h1>
         <p className="m-0 mt-1 max-w-[60ch] text-[14px] text-dust">{desc}</p>
@@ -25,7 +25,7 @@ export function MachinesView() {
   const { machine, set } = useApp()
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-[980px] px-10 pb-16 pt-10">
+      <div className="mx-auto max-w-[980px] px-6 pb-16 pt-8 md:px-10 md:pt-10">
         <PageHead title="Machines" desc="Where your agents run. Logins, settings and sessions follow you to each one."
           actions={<Button variant="primary" onClick={() => set({ addMachine: true })}><Plus size={15} />Add machine</Button>} />
 
@@ -49,8 +49,8 @@ function MachineRow({ m, isDefault, onDefault }: { m: Machine; isDefault: boolea
   const statusText = { online: 'Online', sleeping: 'Asleep', 'on-demand': 'On demand', offline: 'Offline' }[m.status]
   const statusTone = { online: 'sage', sleeping: 'ember', 'on-demand': 'lilac', offline: 'default' }[m.status] as 'sage'
   return (
-    <div className={cn('group flex items-center gap-4 rounded-[16px] border bg-soot p-4 transition-colors hover:bg-slab',
-      isDefault ? 'border-brass/35 shadow-[0_0_0_3px_rgb(var(--glow)/.07)]' : 'border-seam')}>
+    <div className={cn('group flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[16px] bg-soot p-4 transition-colors hover:bg-slab md:flex-nowrap',
+      isDefault ? 'ring-1 ring-brass/35' : '')}>
       <MachineMark m={m} size={42} className="rounded-[12px]" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 whitespace-nowrap">
@@ -97,12 +97,12 @@ function Topology() {
     { icon: Smartphone, label: 'Android', sub: 'paired' },
   ]
   return (
-    <div className="relative overflow-hidden rounded-[18px] border border-seam bg-soot p-6">
+    <div className="relative overflow-hidden rounded-[18px] bg-soot p-6">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,var(--seam)_1px,transparent_0)] [background-size:18px_18px] opacity-60" />
-      <div className="relative grid grid-cols-[1fr_auto_1fr_auto_1.3fr] items-center gap-4">
+      <div className="relative grid grid-cols-1 items-center gap-4 md:grid-cols-[1fr_auto_1fr_auto_1.3fr]">
         <div className="flex flex-col gap-2">
           {clients.map((c) => (
-            <div key={c.label} className="flex items-center gap-2.5 rounded-[11px] border border-seam bg-slab px-3 py-2">
+            <div key={c.label} className="flex items-center gap-2.5 rounded-[11px] bg-slab px-3 py-2">
               <c.icon size={15} className="text-dust" /><span className="text-[13px] font-medium">{c.label}</span><span className="ml-auto text-meta text-ash">{c.sub}</span>
             </div>
           ))}
@@ -116,7 +116,7 @@ function Topology() {
         <Flow />
         <div className="flex flex-col gap-2">
           {machines.slice(0, 4).map((m) => (
-            <div key={m.id} className="flex items-center gap-2.5 rounded-[11px] border border-seam bg-slab px-2.5 py-1.5">
+            <div key={m.id} className="flex items-center gap-2.5 rounded-[11px] bg-slab px-2.5 py-1.5">
               <MachineMark m={m} size={24} /><span className="text-[13px] font-medium">{m.name}</span>
               <span className={cn('ml-auto text-meta', kindMeta[m.kind].color)}>{kindMeta[m.kind].label}</span>
             </div>

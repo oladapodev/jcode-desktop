@@ -2,27 +2,42 @@ import { useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Tooltip } from 'radix-ui'
 import { Toaster } from 'sonner'
-import { useApp } from '@/lib/store'
+import { useApp, type Preset } from '@/lib/store'
 import { Sidebar } from './Sidebar'
-import { ChatView } from './Chat'
+import { Workspace, useDockShortcut, applyPreset } from './Workspace'
 import { HomeView } from './Home'
 import { MachinesView } from './Machines'
 import { AgentsView, AppsView } from './Agents'
 import { SettingsView } from './Settings'
-import { Palette, CanvasView } from './Overlays'
+import { Palette } from './Overlays'
+
+/* Collapse the sidebar to a rail on narrow windows; restore when wide again. */
+function useResponsiveSidebar() {
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1100px)')
+    const on = () => useApp.getState().set({ sidebar: mq.matches ? 'rail' : 'full' })
+    on(); mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+}
 
 export function App() {
   const s = useApp()
+  useResponsiveSidebar()
+  useDockShortcut()
 
-  // Deep links for screenshots/review: #view/sub, e.g. #settings/models, #inspector/changes
+  // Deep links: #home, #agents, #code, #review, #browser, #terminal, #settings/models, #theme/paper ...
   useEffect(() => {
+    const t = new URLSearchParams(location.search).get('theme')
+    if (t) s.set({ theme: t as never })
     const [v, sub] = location.hash.slice(1).split('/')
     if (!v) return
+    const presets = ['chat', 'code', 'review', 'browser', 'terminal']
     if (v === 'palette') s.set({ palette: true })
-    else if (v === 'inspector') s.openInspector((sub as never) || 'plan')
-    else if (v === 'canvas') s.set({ layout: 'canvas' })
+    else if (presets.includes(v)) { s.set({ preset: v as Preset, view: 'workspace' }); const d = useApp.getState().dock; if (d) applyPreset(d, v as Preset) }
     else if (v === 'add-machine') { s.go('machines'); s.set({ addMachine: true }) }
     else if (v === 'stream') s.set({ stream: true })
+    else if (v === 'rail') s.set({ sidebar: 'rail' })
     else if (v === 'theme') s.set({ theme: sub as never })
     else s.go(v as never, sub)
   }, [])
@@ -33,42 +48,43 @@ export function App() {
     const k = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
       const key = e.key.toLowerCase()
-      if (mod && key === 'k') { e.preventDefault(); s.set({ palette: !useApp.getState().palette }) }
-      else if (mod && key === 'b') { e.preventDefault(); s.set({ sidebar: !useApp.getState().sidebar }) }
-      else if (mod && key === 'i') { e.preventDefault(); s.set({ inspector: !useApp.getState().inspector, view: 'chat' }) }
-      else if (mod && key === 'n') { e.preventDefault(); s.go('home') }
-      else if (mod && key === ',') { e.preventDefault(); s.go('settings', 'general') }
+      const st = useApp.getState()
+      const handled = () => { e.preventDefault(); e.stopPropagation() }
+      if (mod && key === 'k') { handled(); st.set({ palette: !st.palette }) }
+      else if (mod && key === 'b') { handled(); st.set({ sidebar: st.sidebar === 'full' ? 'rail' : 'full' }) }
+      else if (mod && key === 'n') { handled(); st.go('home') }
+      else if (mod && key === ',') { handled(); st.go('settings', 'general') }
+      else if (mod && /^[1-5]$/.test(e.key)) {
+        handled()
+        const p = (['chat', 'code', 'review', 'browser', 'terminal'] as Preset[])[+e.key - 1]
+        st.set({ preset: p, view: 'workspace' }); if (st.dock) applyPreset(st.dock, p)
+      }
       else if (e.shiftKey && key === 'tab' && (e.target as HTMLElement)?.tagName === 'TEXTAREA') {
         e.preventDefault(); const order = ['agent', 'plan', 'ask'] as const
-        s.set({ mode: order[(order.indexOf(useApp.getState().mode) + 1) % 3] })
+        st.set({ mode: order[(order.indexOf(st.mode) + 1) % 3] })
       }
     }
-    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
+    window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true)
   }, [])
 
-  const showCanvas = s.view === 'chat' && s.layout === 'canvas'
+  const w = s.sidebar === 'full' ? 272 : 60
   return (
     <Tooltip.Provider>
-      <div className={`grain relative flex h-full ${s.stream ? 'stream' : ''}`}>
-        <AnimatePresence initial={false}>
-          {s.sidebar && (
-            <motion.div key="sb" initial={{ width: 0 }} animate={{ width: 272 }} exit={{ width: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 42 }}
-              className="shrink-0 overflow-hidden border-r border-seam">
-              <div className="h-full w-[272px]"><Sidebar /></div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <div className={`relative flex h-full ${s.stream ? 'stream' : ''}`}>
+        <motion.div initial={false} animate={{ width: w }} transition={{ type: 'spring', stiffness: 420, damping: 42 }}
+          className="shrink-0 overflow-hidden border-r border-seam">
+          <div className="h-full" style={{ width: w }}><Sidebar /></div>
+        </motion.div>
         <main className="relative flex min-w-0 flex-1 flex-col bg-ink">
+          {/* The workspace stays mounted so its layout, editors and terminal survive navigation. */}
+          <div className={s.view === 'workspace' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><Workspace /></div>
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div key={showCanvas ? 'canvas' : s.view} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.14 }}
-              className="flex min-h-0 flex-1 flex-col">
-              {showCanvas ? <CanvasView /> :
-                s.view === 'chat' ? <ChatView /> :
-                s.view === 'home' ? <HomeView /> :
-                s.view === 'machines' ? <MachinesView /> :
-                s.view === 'agents' ? <AgentsView /> :
-                s.view === 'apps' ? <AppsView /> : <SettingsView />}
-            </motion.div>
+            {s.view !== 'workspace' && (
+              <motion.div key={s.view} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.14 }}
+                className="flex min-h-0 flex-1 flex-col">
+                {s.view === 'home' ? <HomeView /> : s.view === 'machines' ? <MachinesView /> : s.view === 'agents' ? <AgentsView /> : s.view === 'apps' ? <AppsView /> : <SettingsView />}
+              </motion.div>
+            )}
           </AnimatePresence>
         </main>
         <Palette />
@@ -82,7 +98,6 @@ export function App() {
   )
 }
 
-/* The add-machine dialog lives on the Machines page; elsewhere we route there first. */
 function AddMachineHost() {
   const { addMachine, go } = useApp()
   useEffect(() => { if (addMachine) go('machines') }, [addMachine])

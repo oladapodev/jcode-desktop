@@ -89,15 +89,17 @@ button { cursor: default; }
 .stream [data-secret] { filter: blur(5px); transition: filter .2s; }
 .stream [data-secret]:hover { filter: blur(5px); }
 
-/* Subtle grain on the canvas so large dark areas don't band */
-.grain::before {
+/* (grain overlay removed: full-screen blend layers cost a repaint on every scroll) */
+.grain-off::before {
   content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .035; mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
 
 /* Live breathing node (the only looping ambient motion) */
-@keyframes breathe { 0%,100% { box-shadow: 0 0 0 0 rgb(var(--glow) / .45); } 50% { box-shadow: 0 0 0 5px rgb(var(--glow) / 0); } }
-.breathe { animation: breathe 2.2s ease-in-out infinite; }
+/* Live indicator: a GPU-only ring (transform + opacity), never animates box-shadow. */
+@keyframes ring { 0% { transform: scale(1); opacity: .55; } 80%,100% { transform: scale(2.2); opacity: 0; } }
+.breathe { position: relative; isolation: isolate; }
+.breathe::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: rgb(var(--glow)); animation: ring 2s cubic-bezier(.2,.6,.3,1) infinite; will-change: transform, opacity; pointer-events: none; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .shimmer-text {
   background: linear-gradient(90deg, var(--dust) 0%, var(--bone) 45%, var(--dust) 90%);
@@ -123,3 +125,72 @@ button { cursor: default; }
 .pop { transform-origin: var(--radix-popover-content-transform-origin, var(--radix-dropdown-menu-content-transform-origin, center)); }
 .pop[data-state="open"] { animation: popIn .16s cubic-bezier(.22,1,.36,1); }
 .pop[data-state="closed"] { animation: popOut .1s ease-in; }
+
+/* ---------- Syntax colours per theme ---------- */
+:root, [data-theme="graphite"] {
+  --syn-keyword: #d79a6b; --syn-fn: #e6c785; --syn-type: #9cc4b8; --syn-string: #a8c48a; --syn-number: #d9a0c4;
+  --syn-comment: #7a7064; --syn-prop: #c9b8a2; --syn-punct: #8e8477; --syn-meta: #b7a1ee;
+}
+[data-theme="midnight"] {
+  --syn-keyword: #c69cff; --syn-fn: #8fb3ff; --syn-type: #7fd4d0; --syn-string: #a7d68c; --syn-number: #f0a879;
+  --syn-comment: #5f6b7d; --syn-prop: #b9c6da; --syn-punct: #7d8899; --syn-meta: #f08bb8;
+}
+[data-theme="carbon"] {
+  --syn-keyword: #ff8fa3; --syn-fn: #5fe0b0; --syn-type: #86b8ff; --syn-string: #f2c86b; --syn-number: #c4a8ff;
+  --syn-comment: #5a5a5a; --syn-prop: #d0d0d0; --syn-punct: #8a8a8a; --syn-meta: #ffb070;
+}
+[data-theme="paper"] {
+  --syn-keyword: #a3401f; --syn-fn: #7a4e0f; --syn-type: #2d6a63; --syn-string: #4f7a2a; --syn-number: #8a3f8a;
+  --syn-comment: #9a8f80; --syn-prop: #5c4a33; --syn-punct: #8a7f70; --syn-meta: #6c4fc0;
+}
+
+/* ---------- Dock (dockview) skinned to the app ---------- */
+.dock-jcode {
+  --dv-group-view-background-color: var(--ink);
+  --dv-tabs-and-actions-container-background-color: var(--ink);
+  --dv-tabs-and-actions-container-height: 38px;
+  --dv-tabs-and-actions-container-font-size: 12.5px;
+  --dv-activegroup-visiblepanel-tab-background-color: var(--slab-2);
+  --dv-activegroup-visiblepanel-tab-color: var(--bone);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-activegroup-hiddenpanel-tab-color: var(--ash);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--slab);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--dust);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--ash);
+  --dv-tab-divider-color: transparent;
+  --dv-separator-border: transparent;
+  --dv-paneview-header-border-color: var(--seam);
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: rgb(var(--glow) / .6);
+  --dv-active-sash-transition-delay: .15s;
+  --dv-drag-over-background-color: rgb(var(--glow) / .10);
+  --dv-drag-over-border-color: rgb(var(--glow) / .55);
+  --dv-icon-hover-background-color: var(--slab-2);
+  --dv-floating-box-shadow: 0 30px 80px -20px rgb(0 0 0 / .6);
+  --dv-tab-font-size: 12.5px;
+  --dv-border-radius: 12px;
+  --dv-tab-border-radius: 8px;
+  --dv-tab-margin: 0 2px;
+  --dv-transition-duration: 160ms;
+  --dv-scrollbar-background-color: var(--seam-2);
+  font-family: var(--font-sans);
+}
+/* Each group is a soft tile with rounded corners separated by a gutter, not hairlines. */
+.dock-jcode .dv-groupview { border-radius: 14px; overflow: hidden; background: var(--soot); }
+.dock-jcode .dv-groupview.dv-active-group { box-shadow: inset 0 0 0 1px var(--seam-2); }
+.dock-jcode .dv-tabs-and-actions-container { padding: 0 6px; background: var(--soot) !important; border-bottom: 1px solid var(--seam); }
+.dock-jcode .dv-tab { padding: 0 !important; margin: 5px 1px; border-radius: 8px; transition: background .12s, color .12s; }
+.dock-jcode .dv-tab:hover { color: var(--bone) !important; }
+.dock-jcode .dv-tab.dv-active-tab { box-shadow: inset 0 0 0 1px var(--seam-2); }
+.dock-jcode .dv-content-container { background: var(--soot); }
+.dock-jcode .dv-split-view-container > .dv-sash-container > .dv-sash { z-index: 5; }
+.dock-jcode .dv-drop-target-dropzone .dv-drop-target-selection { border-radius: 12px; }
+.dock-jcode .dv-watermark { background: var(--ink); }
+
+/* Maximized group: tile fills, gutters disappear */
+.dock-jcode .dv-groupview.dv-groupview-maximized { border-radius: 14px; }
+
+/* Running swarm connectors: dashes flow from coordinator to agent */
+@keyframes swarm-flow { to { stroke-dashoffset: -16; } }
+.swarm-flow { animation: swarm-flow 1.2s linear infinite; }
