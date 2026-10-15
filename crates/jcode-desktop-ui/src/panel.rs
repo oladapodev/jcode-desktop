@@ -6074,52 +6074,36 @@ fn todo_confidence_label(todo: &TodoCardItem) -> Option<String> {
     todo.confidence.map(|state| state.as_str().to_string())
 }
 
-/// The gate row as one text run with colored spans, so it truncates with an
-/// ellipsis on a single line like task rows instead of wrapping.
-fn todo_gate_row_text(
-    goal: &jcode_base::todo::TodoGoal,
-) -> (String, Vec<(std::ops::Range<usize>, gpui::HighlightStyle)>) {
-    let theme = Theme::global();
-    let mut text = String::new();
-    let mut highlights = Vec::new();
-    let mut push = |text: &mut String, part: &str, color: gpui::Rgba| {
-        let start = text.len();
-        text.push_str(part);
-        highlights.push((
-            start..text.len(),
-            gpui::HighlightStyle {
-                color: Some(color.into()),
-                ..Default::default()
-            },
-        ));
-    };
-    for (index, segment) in todo_goal_gate_segments(goal).into_iter().enumerate() {
-        if index > 0 {
-            push(&mut text, " · ", theme.TEXT_FAINT);
-        }
-        if !segment.label.is_empty() {
-            push(&mut text, segment.label, theme.TEXT_DIM);
-            push(&mut text, " ", theme.TEXT_DIM);
-        }
-        push(&mut text, &segment.state, todo_tone_color(segment.tone));
-    }
-    (text, highlights)
+/// The gate row as one plain caption, so it truncates with an ellipsis on a
+/// single line like task rows instead of wrapping.
+fn todo_gate_row_text(goal: &jcode_base::todo::TodoGoal) -> String {
+    todo_goal_gate_segments(goal)
+        .into_iter()
+        .map(|segment| {
+            if segment.label.is_empty() {
+                segment.state
+            } else {
+                format!("{} {}", segment.label, segment.state)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
+/// One faint caption aligned with the group label and task markers. The
+/// goal assessment is supporting detail, so it carries no status colour.
 fn render_todo_gate_row(goal: &jcode_base::todo::TodoGoal) -> impl IntoElement {
-    let (text, highlights) = todo_gate_row_text(goal);
     div()
         .debug_selector(|| "todo-goal-gates".into())
         .w_full()
         .min_w_0()
-        .pl(px(19.0))
-        .pb_0p5()
         .overflow_hidden()
         .whitespace_nowrap()
         .text_ellipsis()
         .text_size(px(11.0))
         .line_height(px(16.0))
-        .child(gpui::StyledText::new(text).with_highlights(highlights))
+        .text_color(Theme::global().TEXT_FAINT)
+        .child(todo_gate_row_text(goal))
 }
 
 fn intent_understanding_tone(state: jcode_base::todo::IntentUnderstanding) -> TodoTone {

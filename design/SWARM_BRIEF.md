@@ -5,7 +5,22 @@ Crate you edit: `crates/jcode-desktop-ui/src/`. Theme tokens: `crates/jcode-desk
 and palettes in `crates/jcode-desktop-ui-core/src/theme/palettes.rs` (studio_dark / studio_light are the defaults).
 
 ## Target design (already approved by the user)
-The reference prototype is `design/prototype-v2/` (React). Read `design/prototype-v2/DESIGN.md` and the
+SIDE-BY-SIDE REFERENCE: `design/reference/*.png` are 1440x900 screenshots of the approved web prototype
+(chat-done, chat-live, chat-paper (light), code, code-paper, review, terminal, browser, home, agents,
+agents-paper, machines, palette, settings-appearance, rail). Always screenshot the native app at
+`--size 1440x900` and compare against the matching reference with the Read tool, side by side. Match
+layout, spacing, sizes, hierarchy and colours as closely as the native app allows. The user's words:
+"make it look like the web demo". Work fast.
+
+DO NOT judge from full-page screenshots. The user requires component/grid tile comparison:
+  `python3 scripts/compare_tiles.py design/reference/chat-done.png target/vm/shots/NAME.png design/compare/<you>/<view> --region sidebar-top:0,0,272,300 --region composer:300,740,760,160 ...`
+  (or `--grid 4x3`). Each output PNG shows REFERENCE left and NATIVE right, 2x zoom. Read each tile and
+  fix differences component by component. Keep all your compare tiles in `design/compare/<your-label>/`
+  (the user wants to see them). Regions of the reference at 1440x900: sidebar 0-272 wide (brand row
+  0-50, New session row 50-90, nav 95-230, projects 240-560, machine switcher 790-845, account 845-900);
+  header 272-1440 x 0-52; chat column x 300-1060; composer y 750-880; right panel x 1075-1440.
+
+The prototype source is `design/prototype-v2/` (React). Read `design/prototype-v2/DESIGN.md` and the
 relevant `src/app/*.tsx` for your area. Screenshots of rounds already ported: `design/native-r2-*.png`,
 `design/native-r3-*.png`.
 
