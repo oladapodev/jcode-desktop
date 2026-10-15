@@ -125,16 +125,33 @@ fn pulse_opacity(phase: f32) -> f32 {
 }
 
 fn render_colored(name: &str, color: Rgba) -> Div {
+    render_sized(name, 14.0, color)
+}
+
+/// The bare tool glyph at `size` pixels, for compact surfaces such as the
+/// folded run summary.
+pub(crate) fn render_sized(name: &str, size: f32, color: Rgba) -> Div {
     div()
         .debug_selector(|| "tool-type-icon".into())
-        .size(px(14.0))
+        .size(px(size))
         .flex_shrink_0()
         .child(
             gpui::svg()
                 .data(icon_data(name))
-                .size(px(14.0))
+                .size(px(size))
                 .text_color(color),
         )
+}
+
+/// The canonical tool name behind wrappers such as `functions.` and MCP
+/// spellings, so callers can classify tools the same way icons do.
+pub(crate) fn canonical_name(name: &str) -> &str {
+    normalized_name(name)
+}
+
+/// Whether two tool names draw the same glyph.
+pub(crate) fn same_icon(a: &str, b: &str) -> bool {
+    icon_data(a) == icon_data(b)
 }
 
 /// Strip only recognized wrappers. Do not mistake an arbitrary MCP tool named

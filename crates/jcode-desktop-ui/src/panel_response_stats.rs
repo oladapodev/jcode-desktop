@@ -133,15 +133,8 @@ struct StatsTooltip(String);
 impl Render for StatsTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("StatsTooltip");
-        div()
-            .px_3()
-            .py_2()
+        super::usage::tooltip_shell()
             .max_w(px(380.))
-            .rounded(px(10.))
-            .bg(Theme::global().popover_background())
-            .text_size(px(11.5))
-            .line_height(relative(1.45))
-            .text_color(Theme::global().TEXT_DIM)
             .child(self.0.clone())
     }
 }

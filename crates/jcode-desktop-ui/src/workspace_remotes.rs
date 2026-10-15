@@ -44,14 +44,7 @@ pub(super) struct HeaderTooltip(pub gpui::SharedString);
 impl Render for HeaderTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("HeaderTooltip");
-        div()
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .bg(Theme::global().PANEL_BG)
-            .border_1()
-            .border_color(Theme::global().PANEL_BORDER)
-            .text_size(px(12.0))
+        crate::panel::usage::tooltip_shell()
             .text_color(Theme::global().TEXT)
             .child(self.0.clone())
     }
@@ -946,10 +939,11 @@ impl Workspace {
         let theme = Theme::global();
         let caption = |text: &'static str| {
             div()
-                .mt(px(10.0))
+                .mt(px(14.0))
                 .px(px(4.0))
-                .text_size(px(11.0))
-                .text_color(theme.TEXT_FAINT)
+                .text_size(px(12.0))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(theme.TEXT_DIM)
                 .child(text)
         };
         let status = self.remotes.status.clone().unwrap_or_default();
@@ -961,7 +955,7 @@ impl Workspace {
             .py(px(18.0))
             .flex()
             .flex_col()
-            .gap(px(6.0))
+            .gap(px(8.0))
             .overflow_y_scroll()
             .font_family(theme.FONT_UI)
             .text_size(px(12.5))
@@ -975,7 +969,7 @@ impl Workspace {
                     .child(
                         div()
                             .id("machines-title")
-                            .text_size(px(17.0))
+                            .text_size(px(20.0))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .tooltip(|_, cx| {
                                 cx.new(|_| HeaderTooltip(
@@ -1205,21 +1199,29 @@ impl Workspace {
         div()
             .id(("machine-row", index))
             .group("machine-row")
-            .h(px(36.0))
-            .pl(px(12.0))
-            .pr(px(4.0))
+            .h(px(52.0))
+            .pl(px(10.0))
+            .pr(px(10.0))
             .flex()
             .items_center()
-            .gap(px(10.0))
-            .rounded(px(10.0))
-            .bg(theme.HEADER_BG)
-            .when(is_default, |el| el.bg(theme.USER_BG))
+            .gap(px(12.0))
+            .rounded(px(14.0))
+            .bg(theme.PANEL_BG)
             .child(
-                gpui::svg()
-                    .data(icon)
+                div()
                     .flex_none()
-                    .size(px(16.0))
-                    .text_color(if is_default { theme.TEXT } else { theme.TEXT_DIM }),
+                    .size(px(32.0))
+                    .rounded(px(9.0))
+                    .bg(theme.HEADER_BG)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        gpui::svg()
+                            .data(icon)
+                            .size(px(16.0))
+                            .text_color(if is_default { theme.TEXT } else { theme.TEXT_DIM }),
+                    ),
             )
             .child(
                 div()
@@ -1227,8 +1229,8 @@ impl Workspace {
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .text_size(px(13.0))
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_size(px(13.5))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
                     .when(host.as_deref().is_some_and(|host| !managed && !host.is_empty()), |el| {
                         el.font_family(theme.FONT_MONO).text_size(px(12.5))
                     })
@@ -1241,8 +1243,8 @@ impl Workspace {
                         el.debug_selector(|| "cloud-alpha-status".into())
                     })
                     .flex_none()
-                    .text_size(px(11.0))
-                    .text_color(theme.TEXT_DIM)
+                    .text_size(px(11.5))
+                    .text_color(theme.TEXT_FAINT)
                     .when_some(detail, |el, detail| {
                         el.tooltip(move |_, cx| {
                             cx.new(|_| HeaderTooltip(detail.clone().into())).into()
@@ -1255,10 +1257,9 @@ impl Workspace {
                     div()
                         .id(("machine-connected", index))
                         .flex_none()
-                        .size(px(6.0))
-                        .rounded_full()
-                        .bg(theme.OK)
-                        .tooltip(|_, cx| cx.new(|_| HeaderTooltip("Connected".into())).into()),
+                        .text_size(px(11.5))
+                        .text_color(theme.OK)
+                        .child("Connected"),
                 )
             })
             .child(div().flex_1())
@@ -1267,19 +1268,19 @@ impl Workspace {
                     .id(("machine-default", index))
                     .debug_selector(move || format!("machine-default-{index}").into())
                     .flex_none()
-                    .h(px(28.0))
+                    .h(px(30.0))
                     .px(px(10.0))
                     .flex()
                     .items_center()
-                    .rounded(px(8.0))
+                    .rounded(px(9.0))
                     .cursor_pointer()
                     .text_size(px(12.0))
                     .text_color(if is_default {
-                        theme.ACCENT
+                        theme.TEXT_DIM
                     } else {
                         theme.TEXT_FAINT
                     })
-                    .hover(|el| el.bg(theme.PANEL_BG).text_color(if is_default { theme.ACCENT } else { theme.TEXT }))
+                    .hover(|el| el.bg(theme.HEADER_BG).text_color(theme.TEXT))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -1293,16 +1294,17 @@ impl Workspace {
                     .id(("machine-connect", index))
                     .debug_selector(move || format!("machine-connect-{index}").into())
                     .flex_none()
-                    .h(px(28.0))
-                    .px(px(12.0))
+                    .h(px(30.0))
+                    .px(px(14.0))
                     .flex()
                     .items_center()
-                    .rounded(px(8.0))
+                    .rounded(px(9.0))
                     .cursor_pointer()
                     .text_size(px(12.0))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.TEXT)
-                    .hover(|el| el.bg(theme.PANEL_BG))
+                    .bg(theme.HEADER_BG)
+                    .hover(|el| el.bg(theme.ACCENT_DIM))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {

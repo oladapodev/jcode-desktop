@@ -543,10 +543,16 @@ def main():
             "<maximized>no</maximized>" if args.responsive_interact else "<maximized>yes</maximized>"))
         for name in ("home", "runtime", "config", "cache", "data", "jcode"):
             (root / name).mkdir(mode=0o700)
-        if args.ai_font:
-            fonts = Path.home() / ".local/share/fonts"
-            if fonts.is_dir():
-                shutil.copytree(fonts, root / "data/fonts", dirs_exist_ok=True)
+        fonts = Path.home() / ".local/share/fonts"
+        if args.ai_font and fonts.is_dir():
+            shutil.copytree(fonts, root / "data/fonts", dirs_exist_ok=True)
+        elif fonts.is_dir():
+            # The isolated HOME hides user fonts. Code and terminal panes use
+            # JetBrainsMono Nerd Font, so expose just that family; otherwise
+            # they fall back to a proportional face and render letter-spaced.
+            for font in fonts.rglob("JetBrainsMonoNerdFont-*.ttf"):
+                (root / "data/fonts").mkdir(parents=True, exist_ok=True)
+                shutil.copy2(font, root / "data/fonts" / font.name)
         processes = []
         read_fd, write_fd = os.pipe()
         try:

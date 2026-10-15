@@ -332,13 +332,9 @@ struct PublishTooltip(&'static str);
 impl Render for PublishTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("PublishTooltip");
-        div()
+        super::usage::tooltip_shell()
             .debug_selector(|| "publish-desktop-tooltip".into())
             .max_w(px(300.))
-            .p_2()
-            .rounded_md()
-            .bg(Theme::global().HEADER_BG)
-            .text_size(px(12.))
             .text_color(Theme::global().TEXT)
             .child(self.0)
     }

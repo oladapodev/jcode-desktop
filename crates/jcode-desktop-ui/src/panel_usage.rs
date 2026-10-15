@@ -10,19 +10,27 @@ pub(crate) struct MeterTooltip(pub(crate) String);
 impl Render for MeterTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("MeterTooltip");
-        let theme = Theme::global();
-        div()
-            .px_3()
-            .py_2()
-            .max_w(px(380.))
-            .rounded_md()
-            .bg(theme.HEADER_BG)
-            .border_1()
-            .border_color(theme.PANEL_BORDER)
-            .text_size(px(11.))
-            .text_color(theme.TEXT_DIM)
-            .child(self.0.clone())
+        tooltip_shell().max_w(px(380.)).child(self.0.clone())
     }
+}
+
+/// The one tooltip surface: raised fill, faint border, 8px corners and
+/// 11.5px Inter. Text defaults to TEXT_DIM; callers may override.
+pub(crate) fn tooltip_shell() -> gpui::Div {
+    let theme = Theme::global();
+    let mut surface = theme.HEADER_BG;
+    surface.a = 1.0;
+    div()
+        .px(px(9.))
+        .py(px(6.))
+        .rounded(px(8.))
+        .bg(surface)
+        .border_1()
+        .border_color(theme.PANEL_BORDER)
+        .font_family(theme.FONT_UI)
+        .text_size(px(11.5))
+        .line_height(relative(1.4))
+        .text_color(theme.TEXT_DIM)
 }
 
 /// Subscription quota shown when hovering the composer's method pill.
@@ -57,16 +65,12 @@ impl Render for LimitsTooltip {
                 .map(|(index, limit)| limit_row(index, limit, &theme))
                 .collect(),
         };
-        div()
+        tooltip_shell()
             .debug_selector(|| "panel-limits-tooltip".into())
-            .px_3()
-            .py_2()
+            .px(px(10.))
+            .py(px(8.))
             .min_w(px(220.))
-            .rounded_xl()
-            .bg(theme.HEADER_BG)
-            .border_1()
-            .border_color(theme.PANEL_BORDER)
-            .text_size(px(11.))
+            .rounded(px(10.))
             .flex()
             .flex_col()
             .gap_1p5()

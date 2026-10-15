@@ -72,6 +72,7 @@ fn every_display_preference_participates_in_derived_cache_key() {
         applet_rows_version: 2,
         streaming: 3,
         expansions: 4,
+        runs: (5, false),
         display: crate::config::DisplayConfig::default(),
     };
     for setting in [

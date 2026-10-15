@@ -66,14 +66,21 @@ pub struct VoiceTooltip(pub String);
 impl Render for VoiceTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("VoiceTooltip");
+        let theme = Theme::global();
+        let mut surface = theme.HEADER_BG;
+        surface.a = 1.0;
         div()
             .debug_selector(|| "voice-shortcut-tooltip".into())
             .max_w(px(300.))
-            .p_2()
-            .rounded_md()
-            .bg(Theme::global().HEADER_BG)
-            .text_size(px(12.))
-            .text_color(Theme::global().TEXT)
+            .px(px(9.))
+            .py(px(6.))
+            .rounded(px(8.))
+            .bg(surface)
+            .border_1()
+            .border_color(theme.PANEL_BORDER)
+            .font_family(theme.FONT_UI)
+            .text_size(px(11.5))
+            .text_color(theme.TEXT)
             .child(self.0.clone())
     }
 }

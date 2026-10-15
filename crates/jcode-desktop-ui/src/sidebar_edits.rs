@@ -24,16 +24,8 @@ struct EditTooltip(String);
 impl Render for EditTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("EditTooltip");
-        div()
-            .px_3()
-            .py_2()
+        crate::panel::usage::tooltip_shell()
             .max_w(px(340.))
-            .rounded_md()
-            .bg(Theme::global().HEADER_BG)
-            .border_1()
-            .border_color(Theme::global().PANEL_BORDER)
-            .text_size(px(11.))
-            .text_color(Theme::global().TEXT_DIM)
             .child(self.0.clone())
     }
 }

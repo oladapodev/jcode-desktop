@@ -26,9 +26,9 @@ impl Workspace {
 
     pub(super) fn render_tutorial_guides(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let heading = if self.onboarding_complete() {
-            "SHORTCUT REFERENCE"
+            "Shortcut reference"
         } else {
-            "GETTING STARTED"
+            "Getting started"
         };
         let modifier = if cfg!(target_os = "macos") {
             "⌘"
@@ -137,22 +137,39 @@ impl Workspace {
         ];
         let rows = lessons.into_iter().map(|(id, label, key, skill, action)| {
             let practiced = self.coach.trace(skill).practiced();
+            let keycap = |text: String| {
+                div()
+                    .flex_none()
+                    .min_w(px(20.0))
+                    .h(px(20.0))
+                    .px(px(6.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(6.0))
+                    .bg(Theme::global().TOOL_BG)
+                    .font_family(Theme::global().FONT_UI)
+                    .text_size(px(11.0))
+                    .text_color(Theme::global().TEXT_DIM)
+                    .child(text)
+            };
             div()
                 .id(id)
                 .debug_selector(move || id.into())
                 .w_full()
-                .min_h(px(30.0))
+                .min_h(px(32.0))
                 .flex_none()
                 .flex()
                 .items_center()
                 .justify_between()
                 .gap_2()
-                .py_1()
-                .text_size(px(12.0))
+                .px(px(8.0))
+                .rounded(px(8.0))
+                .text_size(px(13.0))
                 .text_color(Theme::global().TEXT)
                 .when_some(action, |el, action| {
                     el.cursor_pointer()
-                        .hover(|el| el.text_color(Theme::global().ACCENT))
+                        .hover(|el| el.bg(Theme::global().TOOL_BG))
                         .on_mouse_down(
                             gpui::MouseButton::Left,
                             cx.listener(move |this, _, w, cx| {
@@ -161,45 +178,41 @@ impl Workspace {
                             }),
                         )
                 })
-                .child(div().min_w_0().flex_1().child(label))
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(label),
+                )
                 .when(practiced, |el| {
                     el.child(
                         div()
                             .debug_selector(move || format!("tutorial-learned-{skill}").into())
-                            .text_size(px(10.0))
+                            .flex_none()
+                            .text_size(px(11.0))
                             .text_color(Theme::global().OK)
                             .child("✓"),
                     )
                 })
                 .child(if action.is_some() {
-                    div()
-                        .flex_none()
-                        .px_1()
-                        .py(px(2.0))
-                        .rounded_sm()
-                        .bg(Theme::global().BG)
-                        .font_family(Theme::global().FONT_UI)
-                        .text_size(px(10.0))
-                        .text_color(Theme::global().TEXT_DIM)
-                        .child(key)
-                        .into_any_element()
+                    keycap(key.to_string()).into_any_element()
                 } else {
                     div()
                         .flex()
                         .flex_none()
-                        .gap_1()
+                        .gap(px(4.0))
                         .children((1..=4).map(|preset| {
-                            div()
+                            keycap(preset.to_string())
                                 .id(format!("tutorial-width-{preset}"))
                                 .debug_selector(move || format!("tutorial-width-{preset}").into())
-                                .px_1()
-                                .py(px(2.0))
-                                .rounded_sm()
-                                .bg(Theme::global().BG)
-                                .font_family(Theme::global().FONT_UI)
-                                .text_size(px(10.0))
                                 .cursor_pointer()
-                                .hover(|el| el.text_color(Theme::global().ACCENT))
+                                .hover(|el| {
+                                    el.bg(Theme::global().USER_BG)
+                                        .text_color(Theme::global().TEXT)
+                                })
                                 .on_mouse_down(
                                     gpui::MouseButton::Left,
                                     cx.listener(move |this, _, _, cx| {
@@ -207,7 +220,6 @@ impl Workspace {
                                         cx.stop_propagation();
                                     }),
                                 )
-                                .child(preset.to_string())
                         }))
                         .into_any_element()
                 })
@@ -219,7 +231,7 @@ impl Workspace {
             .min_h_0()
             .flex()
             .flex_col()
-            .px_4()
+            .px_3()
             .py_4()
             .child(
                 div()
@@ -231,35 +243,31 @@ impl Workspace {
                     .child(
                         div()
                             .debug_selector(|| "tutorial-heading".into())
-                            .text_size(px(10.0))
-                            .text_color(Theme::global().TEXT_DIM)
+                            .px(px(8.0))
+                            .text_size(px(11.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(Theme::global().TEXT_FAINT)
                             .child(heading),
                     )
                     .child(
                         div()
-                            .mt_3()
-                            .text_size(px(19.0))
+                            .mt_1()
+                            .px(px(8.0))
+                            .text_size(px(15.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(Theme::global().TEXT)
                             .child("Workspace shortcuts"),
                     )
                     .child(
                         div()
-                            .mt_2()
-                            .text_size(px(12.0))
-                            .line_height(relative(1.5))
-                            .text_color(Theme::global().TEXT_DIM)
-                            .child("Navigate, arrange panels, and adjust your view."),
+                            .mt_1()
+                            .mb_3()
+                            .px(px(8.0))
+                            .text_size(px(11.0))
+                            .text_color(Theme::global().TEXT_FAINT)
+                            .child(format!("Hold {modifier} with a key, or click a row")),
                     )
-                    .child(
-                        div()
-                            .mt_4()
-                            .mb_2()
-                            .text_size(px(10.0))
-                            .text_color(Theme::global().TEXT_DIM)
-                            .child(format!(
-                                "Hold {modifier}, then press a key. Or click a row."
-                            )),
-                    )
-                    .children(rows),
+                    .child(div().flex().flex_col().gap(px(1.0)).children(rows)),
             )
             .into_any_element()
     }

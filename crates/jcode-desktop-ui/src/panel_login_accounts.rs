@@ -995,7 +995,12 @@ impl Panel {
                     .child(login_logo(&provider)),
             )
             .child(text);
-        if connected || status != ConnectionStatus::NotConnected {
+        // In the in-place picker every row is already connected, so a
+        // Connected chip says nothing. Only a status worth noticing shows.
+        let quiet = selecting && status == ConnectionStatus::Connected;
+        if quiet {
+            drop(status_selector);
+        } else if connected || status != ConnectionStatus::NotConnected {
             let tip = status.detail();
             element = element.child(
                 status_chip(status.label(), color)
@@ -1051,9 +1056,6 @@ impl Panel {
             );
         }
         let label = row.label.clone();
-        if selecting {
-            element = element.child(chip("Select provider", theme.ACCENT));
-        }
         element = element.on_click(cx.listener(move |this, _, window, cx| {
             if selecting {
                 this.select_existing_provider(provider, label.clone(), window, cx);

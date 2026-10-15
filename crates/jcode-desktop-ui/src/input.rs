@@ -2338,19 +2338,23 @@ impl Render for PromptInput {
                             .opacity(0.65 + 0.35 * menu_progress)
                             .flex()
                             .flex_col()
-                            .rounded_lg()
+                            .rounded(px(popup::RADIUS))
                             .border_1()
-                            .border_color(Theme::global().PANEL_BORDER_FOCUS)
-                            .bg(Theme::global().HEADER_BG)
-                            .shadow_lg()
+                            .border_color(Theme::global().PANEL_BORDER)
+                            .bg(popup::surface())
+                            .shadow(popup::shadow())
+                            .font_family(Theme::global().FONT_UI)
                             .occlude()
+                            .when(popup::search_row_fits(window.viewport_size().height), |el| {
+                                el.children(self.render_model_search_row())
+                            })
                             .child(
                                 div()
                                     .relative()
                                     .flex()
                                     .flex_col()
                                     .min_h_0()
-                                    .p_1()
+                                    .p(px(6.0))
                                     .child(
                                         div()
                                             .id("slash-command-scroll")
@@ -2367,9 +2371,9 @@ impl Render for PromptInput {
                                             .when(suggestions.is_empty(), |el| {
                                                 el.child(
                                                     div()
-                                                        .px_3()
+                                                        .px(px(10.0))
                                                         .py_2()
-                                                        .text_size(px(12.0))
+                                                        .text_size(px(12.5))
                                                         .text_color(Theme::global().TEXT_FAINT)
                                                         .child("No models match"),
                                                 )

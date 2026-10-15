@@ -5,6 +5,8 @@ const COMPACT_BREAKPOINT: f32 = 1100.0;
 pub(super) const SINGLE_PANEL_BREAKPOINT: f32 = 1100.0;
 /// A hidden sidebar on a wide window collapses to this icon rail.
 pub(super) const RAIL_WIDTH: f32 = 52.0;
+/// Square icon buttons inside the rail.
+const RAIL_BUTTON_SIZE: f32 = 32.0;
 /// Flat sidebar navigation buttons (Normal layout).
 pub(super) const NAV_ITEM_HEIGHT: f32 = 26.0;
 
@@ -74,11 +76,11 @@ fn rail_button(
         .debug_selector(move || id.into())
         .group(id)
         .flex_none()
-        .size(px(36.0))
+        .size(px(RAIL_BUTTON_SIZE))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(10.0))
+        .rounded(px(9.0))
         .cursor_pointer()
         .occlude()
         .hover(|el| el.bg(Theme::global().PANEL_BG))
@@ -168,7 +170,11 @@ impl Workspace {
             // Clear the macOS traffic lights, which sit over this column.
             .pt(px(content_top_inset(false, fullscreen) + 6.0))
             .pb(px(10.0))
-            .when(!folders, |el| el.bg(theme.HEADER_BG))
+            // Its own surface in both layouts, so the icons never float on
+            // the canvas. A hairline pane divider separates it from sheets
+            // that share the same recessed tone in the folder layout.
+            .bg(theme.HEADER_BG)
+            .when(folders, |el| el.border_r_1().border_color(theme.PANEL_BORDER))
             // The tab row's show-sidebar button sits right beside this rail,
             // so the rail starts with the primary action instead of repeating it.
             .child(

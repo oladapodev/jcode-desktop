@@ -7,12 +7,8 @@ struct TaskTooltip(String);
 impl Render for TaskTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("TaskTooltip");
-        div()
+        super::usage::tooltip_shell()
             .max_w(px(420.0))
-            .p_2()
-            .rounded(px(10.))
-            .bg(Theme::global().popover_background())
-            .text_size(px(12.0))
             .text_color(Theme::global().TEXT)
             .child(self.0.clone())
     }

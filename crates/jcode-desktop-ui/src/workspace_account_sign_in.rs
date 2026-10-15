@@ -1238,7 +1238,7 @@ impl Workspace {
                 subheading("Optional. Sign in to sync sessions and settings.")
             }
             None => {
-                subheading("Found in your coding agent logins. Pick one and we'll email it a code.")
+                subheading("Pick an email and we'll send it a code.")
             }
         });
         let state_shows_field = state.shows_field();

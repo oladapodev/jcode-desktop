@@ -126,6 +126,12 @@ fn fingerprint(item: &Item, prompt_expanded: bool, tool_expanded: bool) -> u64 {
         Item::CacheMiss(notice) => notice.text().hash(&mut state),
         Item::Image(_) | Item::ResponseStats(_) | Item::Todos(_) => {}
         Item::Applet(instance) => instance.hash(&mut state),
+        Item::ToolRun(run) => {
+            run.id.hash(&mut state);
+            run.names.hash(&mut state);
+            run.failed.hash(&mut state);
+            run.expanded.hash(&mut state);
+        }
     }
     state.finish()
 }
@@ -255,7 +261,12 @@ pub(super) fn segments_with_display(
         }
         Item::CacheMiss(notice) => push(format!("{index}-kv-cache-miss"), notice.text()),
         // Pinned todos and non-text chrome are outside the transcript document.
-        Item::Todos(_) | Item::Image(_) | Item::ResponseStats(_) | Item::Applet(_) => {}
+        // A folded run's summary is a control, not selectable text.
+        Item::Todos(_)
+        | Item::Image(_)
+        | Item::ResponseStats(_)
+        | Item::Applet(_)
+        | Item::ToolRun(_) => {}
     }
     result
 }

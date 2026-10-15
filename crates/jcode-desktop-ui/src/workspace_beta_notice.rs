@@ -14,14 +14,15 @@ fn countdown_ring(progress: f32) -> gpui::AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(12.0))
+        .text_size(px(11.0))
+        .text_color(theme.TEXT_DIM)
         .child(format!("{:.0}", (remaining * 3.0).ceil()))
         .child(
             gpui::canvas(
                 |_, _, _| (),
                 move |bounds, _, window, _| {
                     for (fraction, color) in
-                        [(1.0, theme.ACCENT.opacity(0.18)), (remaining, theme.ACCENT)]
+                        [(1.0, theme.TOOL_BG), (remaining, theme.TEXT_FAINT)]
                     {
                         if fraction <= 0.0 {
                             continue;
@@ -87,12 +88,13 @@ impl Workspace {
             .right(px(16.0))
             .w(px(380.0))
             .max_w((window.viewport_size().width - px(32.0)).max(px(0.0)))
-            .p_3()
-            .rounded_lg()
+            .px_4()
+            .py_3()
+            .rounded(px(14.0))
             .bg(theme.PANEL_BG)
             .border_1()
-            .border_color(theme.ACCENT.opacity(0.2))
-            .shadow_md()
+            .border_color(theme.PANEL_BORDER_IDLE)
+            .shadow_sm()
             .occlude()
             .flex()
             .items_start()
@@ -119,7 +121,7 @@ impl Workspace {
                     .child(
                         div()
                             .debug_selector(|| "desktop-beta-message".into())
-                            .text_size(px(12.0))
+                            .text_size(px(12.5))
                             .text_color(theme.TEXT_DIM)
                             .child("Expect bugs. Please report anything that goes wrong."),
                     ),
@@ -131,7 +133,7 @@ impl Workspace {
                     .flex_none()
                     .rounded_full()
                     .cursor_pointer()
-                    .hover(|style| style.bg(theme.ACCENT.opacity(0.15)))
+                    .hover(|style| style.bg(theme.TOOL_BG))
                     .tooltip(|_, cx| {
                         cx.new(|_| super::remotes::HeaderTooltip("Dismiss notification".into()))
                             .into()

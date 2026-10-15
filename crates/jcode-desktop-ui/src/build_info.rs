@@ -98,21 +98,12 @@ pub(crate) struct BuildTooltip;
 impl Render for BuildTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("BuildTooltip");
-        let theme = Theme::global();
-        div()
+        crate::panel::usage::tooltip_shell()
             .debug_selector(|| "panel-build-tooltip".into())
             .flex()
             .flex_col()
             .gap_1()
-            .px_3()
-            .py_2()
             .max_w(px(420.))
-            .rounded_md()
-            .bg(theme.HEADER_BG)
-            .border_1()
-            .border_color(theme.PANEL_BORDER)
-            .text_size(px(11.))
-            .text_color(theme.TEXT_DIM)
             .child(format!(
                 "Jcode Desktop · {}",
                 if development() {

@@ -394,6 +394,7 @@ impl Workspace {
                     let _ = submit.update(app, |this, cx| this.resume_selected(window, cx));
                 },
             )
+            .without_chrome()
             .with_on_change(move |query, app| {
                 let _ = change.update(app, |this, cx| {
                     if let Some(state) = &mut this.resume {
@@ -621,46 +622,53 @@ impl Workspace {
         let filter = state.filter;
         self.load_resume_preview(selected.as_deref(), cx);
         let theme = Theme::global();
+        // Row/chip highlight: a light ink wash reads on the raised palette in
+        // both themes, where USER_BG can match the surface.
+        let wash = gpui::Rgba {
+            a: 0.075,
+            ..theme.TEXT
+        };
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_default();
         let mut rows = div()
             .id("resume-results")
             .flex_1()
             .min_h_0()
+            .flex()
+            .flex_col()
+            .gap(px(1.0))
             .overflow_y_scroll()
             .track_scroll(&scroll);
         for (index, session) in matches.iter().enumerate() {
             let id = session.session_id.clone();
             let is_selected = selected.as_ref() == Some(&id);
-            let (icon, title) = sidebar_session_title(session);
-            let saved_marker = match session.save_label.as_deref() {
-                Some(label) if session.saved => format!("★ {label} · "),
-                _ if session.saved => "★ ".to_string(),
-                _ => String::new(),
-            };
+            let (_, title) = sidebar_session_title(session);
             let live = liveness(session);
-            let status = match live {
-                Liveness::Working => "working".to_string(),
-                Liveness::Open => "open".to_string(),
-                Liveness::Crashed | Liveness::Inactive => session.status.clone(),
-            };
-            let metadata = format!(
-                "{}{} · {}",
-                saved_marker,
-                status,
-                sidebar_session_meta(session).unwrap_or_else(|| "Session history".into())
-            );
-            let badge =
+            let dot =
                 resume_liveness_badge(live, open_spinners.get(&session.session_id).cloned(), index);
             let excerpt = excerpts.get(&session.session_id).cloned();
+            let when = resume_relative_time(session, now_ms);
+            let label = session
+                .save_label
+                .clone()
+                .filter(|label| session.saved && !label.is_empty());
             rows = rows.child(
                 div()
                     .id(("resume-row", index))
                     .debug_selector(move || format!("resume-row-{index}"))
-                    .px_3()
-                    .py_2()
+                    .flex_none()
+                    .flex()
+                    .flex_col()
+                    .justify_center()
+                    .min_h(px(34.0))
+                    .px(px(10.0))
+                    .py(px(6.0))
                     .cursor_pointer()
-                    .rounded_md()
-                    .when(is_selected, |el| el.bg(theme.TOOL_BG))
-                    .hover(|el| el.bg(theme.TOOL_BG))
+                    .rounded(px(8.0))
+                    .when(is_selected, |el| el.bg(wash))
+                    .hover(|el| el.bg(wash))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         if let Some(state) = &mut this.resume {
                             state.selected = Some(id.clone());
@@ -671,55 +679,63 @@ impl Workspace {
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .gap(px(10.0))
+                            .child(dot)
                             .child(
                                 div()
                                     .flex_1()
                                     .min_w_0()
                                     .text_ellipsis()
-                                    .child(format!("{icon} {title}")),
+                                    .text_color(if is_selected { theme.TEXT } else { theme.TEXT_DIM })
+                                    .when(is_selected, |el| {
+                                        el.font_weight(gpui::FontWeight::MEDIUM)
+                                    })
+                                    .child(title),
                             )
-                            .children(badge),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(12.0))
-                            .text_color(theme.TEXT_DIM)
-                            .text_ellipsis()
-                            .child(
-                                session
-                                    .working_dir
-                                    .as_deref()
-                                    .map(compact_working_dir)
-                                    .unwrap_or_else(|| "No working directory".into()),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(theme.TEXT_FAINT)
-                            .child(metadata),
+                            .children(label.map(|label| {
+                                div()
+                                    .flex_none()
+                                    .max_w(px(120.0))
+                                    .text_ellipsis()
+                                    .text_size(px(11.5))
+                                    .text_color(theme.TEXT_FAINT)
+                                    .child(label)
+                            }))
+                            .children(when.map(|when| {
+                                div()
+                                    .flex_none()
+                                    .text_size(px(11.5))
+                                    .text_color(theme.TEXT_FAINT)
+                                    .child(when)
+                            })),
                     )
                     .children(excerpt.map(|excerpt| {
                         div()
                             .debug_selector(move || format!("resume-row-excerpt-{index}"))
-                            .text_size(px(11.0))
-                            .text_color(theme.TEXT_DIM)
+                            .pl(px(18.0))
+                            .pt(px(2.0))
+                            .text_size(px(11.5))
+                            .text_color(theme.TEXT_FAINT)
                             .text_ellipsis()
                             .child(excerpt)
                     })),
             );
         }
         if matches.is_empty() {
-            rows = rows.child(div().p_4().text_color(theme.TEXT_DIM).child(
-                if self.sessions.is_empty() {
-                    "No sessions available yet."
-                } else if content_pending {
-                    "Searching conversations…"
-                } else {
-                    "No matching sessions. Try another search or filter."
-                },
-            ));
+            rows = rows.child(
+                div()
+                    .px(px(10.0))
+                    .py(px(24.0))
+                    .text_size(px(12.5))
+                    .text_color(theme.TEXT_FAINT)
+                    .child(if self.sessions.is_empty() {
+                        "No sessions yet"
+                    } else if content_pending {
+                        "Searching conversations…"
+                    } else {
+                        "No matching sessions"
+                    }),
+            );
         }
         let mut preview = div()
             .id("resume-preview")
@@ -728,12 +744,10 @@ impl Workspace {
             .debug_selector(|| "resume-preview".into())
             .flex_1()
             .min_w_0()
-            .p_3()
+            .p(px(6.0))
             .flex()
             .flex_col()
-            .gap_2()
-            .bg(theme.TOOL_BG)
-            .rounded_lg();
+            .gap(px(8.0));
         if let Some(session) = matches
             .iter()
             .find(|s| Some(&s.session_id) == selected.as_ref())
@@ -765,15 +779,22 @@ impl Workspace {
             preview = preview.child(
                 div()
                     .flex_none()
-                    .px_1()
+                    .px(px(8.0))
+                    .pt(px(4.0))
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .child(div().text_size(px(16.0)).text_ellipsis().child(title))
+                    .gap(px(2.0))
                     .child(
                         div()
-                            .text_size(px(11.0))
-                            .text_color(theme.TEXT_DIM)
+                            .text_size(px(15.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_ellipsis()
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.5))
+                            .text_color(theme.TEXT_FAINT)
                             .text_ellipsis()
                             .child(detail),
                     ),
@@ -796,24 +817,188 @@ impl Workspace {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .rounded_md()
+                    .rounded(px(10.0))
                     .bg(theme.PANEL_BG)
                     .child(transcript),
             );
         } else {
-            preview = preview.child("Select a session to see its details.");
+            preview = preview.child(resume_preview_notice("Select a session to preview it."));
         }
+        let count = if content_pending {
+            format!("{} sessions · searching…", matches.len())
+        } else if working_count > 0 {
+            format!("{} sessions · {working_count} working", matches.len())
+        } else {
+            format!("{} sessions", matches.len())
+        };
+        let mut surface = theme.HEADER_BG;
+        surface.a = 1.0;
+        let palette = div()
+            .debug_selector(|| "resume-palette".into())
+            .w_full()
+            .max_w(px(1120.0))
+            .h_full()
+            .max_h(px(760.0))
+            .flex()
+            .flex_col()
+            .rounded(px(16.0))
+            .border_1()
+            .border_color(theme.PANEL_BORDER)
+            .bg(surface)
+            .shadow(vec![gpui::BoxShadow {
+                color: gpui::hsla(0., 0., 0., 0.22),
+                offset: gpui::point(px(0.), px(12.)),
+                blur_radius: px(32.),
+                spread_radius: px(-8.),
+                inset: false,
+            }])
+            .overflow_hidden()
+            .child(
+                div()
+                    .flex_none()
+                    .h(px(54.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
+                    .px(px(16.0))
+                    .border_b_1()
+                    .border_color(theme.PANEL_BORDER)
+                    .child(
+                        gpui::svg()
+                            .data(include_bytes!("../../../assets/icons/search.svg") as &[u8])
+                            .size(px(16.0))
+                            .flex_none()
+                            .text_color(theme.TEXT_FAINT),
+                    )
+                    .child(
+                        div()
+                            .debug_selector(|| "resume-search".into())
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(px(15.0))
+                            .child(search),
+                    )
+                    .child(
+                        div()
+                            .id("resume-close")
+                            .debug_selector(|| "resume-close".into())
+                            .flex_none()
+                            .cursor_pointer()
+                            .px(px(8.0))
+                            .py(px(3.0))
+                            .rounded(px(6.0))
+                            .bg(wash)
+                            .text_size(px(11.5))
+                            .text_color(theme.TEXT_DIM)
+                            .hover(|el| el.text_color(theme.TEXT))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.close_resume(window, cx)),
+                            )
+                            .child("Esc"),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .px(px(12.0))
+                    .pt(px(10.0))
+                    .pb(px(6.0))
+                    .text_size(px(12.5))
+                    .child(
+                        div()
+                            .pl(px(4.0))
+                            .pr(px(10.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.TEXT_DIM)
+                            .child("Resume session"),
+                    )
+                    .children(
+                        [
+                            (Filter::All, "All", "resume-all"),
+                            (Filter::Active, "Active", "resume-active"),
+                            (Filter::Saved, "Saved", "resume-saved"),
+                            (Filter::Crashed, "Crashed", "resume-crashed"),
+                        ]
+                        .into_iter()
+                        .map(|(value, label, id)| {
+                            let active = value == filter;
+                            div()
+                                .id(id)
+                                .h(px(26.0))
+                                .flex()
+                                .items_center()
+                                .px(px(10.0))
+                                .rounded_full()
+                                .cursor_pointer()
+                                .text_color(if active { theme.TEXT } else { theme.TEXT_FAINT })
+                                .when(active, |el| el.bg(wash))
+                                .hover(|el| el.text_color(theme.TEXT))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.set_resume_filter(value, cx)
+                                }))
+                                .child(label)
+                        }),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .pr(px(4.0))
+                            .text_size(px(11.5))
+                            .text_color(theme.TEXT_FAINT)
+                            .child(count),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(px(8.0))
+                    .flex_1()
+                    .min_h_0()
+                    .px(px(6.0))
+                    .pb(px(6.0))
+                    .child(
+                        div()
+                            .w(relative(0.42))
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .text_size(px(13.0))
+                            .child(rows),
+                    )
+                    .child(preview),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(16.0))
+                    .px(px(16.0))
+                    .py(px(9.0))
+                    .border_t_1()
+                    .border_color(theme.PANEL_BORDER)
+                    .text_size(px(11.0))
+                    .text_color(theme.TEXT_FAINT)
+                    .child("↑↓ move")
+                    .child("Enter open")
+                    .child("Ctrl 1–4 filters")
+                    .child(div().ml_auto().child("Esc close")),
+            );
         div()
             .debug_selector(|| "resume-panel".into())
             .size_full()
-            .p_4()
+            .p(px(24.0))
+            .pt(px(40.0))
             .flex()
             .flex_col()
-            .gap_3()
-            .bg(theme.PANEL_BG)
+            .items_center()
+            .bg(theme.BG)
             .text_color(theme.TEXT)
             .font_family(theme.FONT_UI)
-            .text_size(px(14.0))
+            .text_size(px(13.0))
             .track_focus(&self.focus_handle)
             .capture_key_down(cx.listener(Self::resume_key_down))
             .capture_action(cx.listener(|this, _: &crate::input::Clear, window, cx| {
@@ -832,85 +1017,7 @@ impl Workspace {
                 this.move_resume_selection("down", cx);
                 cx.stop_propagation();
             }))
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .child(div().text_size(px(22.0)).child("Resume session"))
-                    .child(
-                        div()
-                            .id("resume-close")
-                            .debug_selector(|| "resume-close".into())
-                            .cursor_pointer()
-                            .px_3()
-                            .py_2()
-                            .rounded_md()
-                            .hover(|el| el.bg(theme.TOOL_BG))
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.close_resume(window, cx)),
-                            )
-                            .child("Back · Esc"),
-                    ),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "resume-search".into())
-                    .child(search),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .children(
-                        [
-                            (Filter::All, "All", "resume-all"),
-                            (Filter::Active, "Active", "resume-active"),
-                            (Filter::Saved, "Saved", "resume-saved"),
-                            (Filter::Crashed, "Crashed", "resume-crashed"),
-                        ]
-                        .into_iter()
-                        .map(|(value, label, id)| {
-                            div()
-                                .id(id)
-                                .px_3()
-                                .py_1()
-                                .rounded_md()
-                                .cursor_pointer()
-                                .when(value == filter, |el| el.bg(theme.TOOL_BG))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.set_resume_filter(value, cx)
-                                }))
-                                .child(label)
-                        }),
-                    )
-                    .child(div().text_color(theme.TEXT_DIM).child(if content_pending {
-                        format!("{} sessions · searching conversations…", matches.len())
-                    } else if working_count > 0 {
-                        format!("{} sessions · {working_count} working", matches.len())
-                    } else {
-                        format!("{} sessions", matches.len())
-                    })),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .flex_1()
-                    .min_h_0()
-                    .child(
-                        div()
-                            .w(relative(0.4))
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(rows),
-                    )
-                    .child(preview),
-            )
-            .child(div().text_size(px(11.0)).text_color(theme.TEXT_DIM).child(
-                "↑ ↓ Navigate   Page Up / Down   Enter Resume   Esc Back   Ctrl+1/2/3/4 Filters",
-            ))
+            .child(palette)
     }
 
     fn load_resume_preview(&mut self, selected: Option<&str>, cx: &mut Context<Self>) {
@@ -976,47 +1083,66 @@ type PreviewHistory = (
     Vec<jcode_sdk::RenderedImage>,
 );
 
-/// A compact right-aligned tag. Working rows get a tinted pill so they stand
-/// out at a glance. Open rows get a quiet label.
+/// The row's status dot. Colour carries state only: live work uses the
+/// accent, a crash the error ink, an open idle session a quiet ring.
 fn resume_liveness_badge(
     live: Liveness,
     spinner: Option<gpui::AnyView>,
     index: usize,
-) -> Option<gpui::AnyElement> {
+) -> gpui::AnyElement {
     let theme = Theme::global();
-    let (label, ink, fill) = match live {
-        Liveness::Inactive => return None,
-        Liveness::Working => ("Working", theme.OK, Some(gpui::Rgba { a: 0.2, ..theme.OK })),
-        Liveness::Open => ("Open", theme.TEXT_DIM, None),
-        Liveness::Crashed => (
-            "Crashed",
-            theme.ERROR,
-            Some(gpui::Rgba {
-                a: 0.18,
-                ..theme.ERROR
-            }),
-        ),
+    let base = div()
+        .size(px(8.0))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center();
+    let label = match live {
+        Liveness::Inactive => {
+            return base
+                .child(
+                    div()
+                        .size(px(6.0))
+                        .rounded_full()
+                        .bg(gpui::Rgba { a: 0.45, ..theme.TEXT_FAINT }),
+                )
+                .into_any_element();
+        }
+        Liveness::Working => "working",
+        Liveness::Open => "open",
+        Liveness::Crashed => "crashed",
     };
-    Some(
-        div()
-            .debug_selector(move || format!("resume-row-{index}-{}", label.to_lowercase()))
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap(px(5.0))
-            .px_2()
-            .py(px(1.0))
-            .rounded_full()
-            .text_size(px(12.0))
-            .text_color(ink)
-            .when_some(fill, |el, fill| el.bg(fill))
-            .when(live == Liveness::Working, |el| match spinner {
-                Some(spinner) => el.child(div().flex_none().child(spinner)),
-                None => el.child(div().flex_none().size(px(7.0)).rounded_full().bg(ink)),
-            })
-            .child(label)
+    let base = base.debug_selector(move || format!("resume-row-{index}-{label}"));
+    match (live, spinner) {
+        (Liveness::Working, Some(spinner)) => base.child(spinner).into_any_element(),
+        (Liveness::Working, None) => base
+            .child(div().size(px(7.0)).rounded_full().bg(theme.ACCENT))
             .into_any_element(),
-    )
+        (Liveness::Crashed, _) => base
+            .child(div().size(px(7.0)).rounded_full().bg(theme.ERROR))
+            .into_any_element(),
+        _ => base
+            .child(
+                div()
+                    .size(px(7.0))
+                    .rounded_full()
+                    .border_1()
+                    .border_color(theme.TEXT_DIM),
+            )
+            .into_any_element(),
+    }
+}
+
+/// Faint `3h ago` for the row, from the latest activity when known.
+fn resume_relative_time(session: &jcode_sdk::SessionInfo, now_ms: u64) -> Option<String> {
+    session
+        .last_active_at_ms
+        .or(session.updated_at_ms)
+        .and_then(|ms| u64::try_from(ms).ok())
+        // Ignore placeholder timestamps that would read as decades ago.
+        .filter(|ms| *ms > 1_000_000_000_000)
+        .or_else(|| sidebar_session_created_ms(&session.session_id))
+        .map(|ms| format_time_ago(ms, now_ms))
 }
 
 fn resume_preview_notice(text: impl Into<gpui::SharedString>) -> gpui::AnyElement {

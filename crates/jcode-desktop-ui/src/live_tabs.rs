@@ -366,17 +366,10 @@ pub(super) struct TabTooltip(pub(super) gpui::SharedString);
 impl Render for TabTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let _render_scope = crate::render_stats::scope("TabTooltip");
-        div()
+        crate::panel::usage::tooltip_shell()
             .debug_selector(|| "live-session-tab-tooltip".into())
             .max_w(px(360.0))
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .border_1()
-            .border_color(Theme::global().PANEL_BORDER)
-            .bg(Theme::global().PANEL_BG)
             .text_color(Theme::global().TEXT)
-            .text_size(px(12.0))
             .child(self.0.clone())
     }
 }
@@ -697,13 +690,13 @@ impl Workspace {
                 }
                 None => ("Empty workspace".into(), "📁", None),
             };
-            // Colour only carries status: live work, an unseen finish, or a failure.
-            // A paused plan resolves to the dim ink and stays quiet here.
+            // Colour only carries status: live work or a failure. Idle,
+            // finished and paused sessions stay quiet in the tab row.
             let status_color = ring.and_then(|ring| {
                 if ring.working() {
                     Some(theme.ACCENT)
                 } else {
-                    (ring.color != theme.TEXT_DIM).then_some(ring.color)
+                    (ring.color == theme.ERROR).then_some(theme.ERROR)
                 }
             });
             let tab_bg = if focused { theme.PANEL_BG } else { backdrop };
@@ -773,28 +766,12 @@ impl Workspace {
                                 Some(index) => format!("live-session-tab-{index}-title"),
                                 None => "live-session-empty-tab-title".into(),
                             })
-                            .relative()
-                            .flex_1()
+                            // Shrinks to fit, so the status dot sits right
+                            // after the label instead of at the far edge.
+                            .flex_initial()
                             .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .child(title.clone())
-                            .child(
-                                div()
-                                    .debug_selector(move || match index {
-                                        Some(index) => format!("live-session-tab-{index}-fade"),
-                                        None => "live-session-empty-tab-fade".into(),
-                                    })
-                                    .absolute()
-                                    .top_0()
-                                    .bottom_0()
-                                    .right_0()
-                                    .w(px(20.0))
-                                    .bg(fade(tab_bg))
-                                    .group_hover("live-session-tab", move |style| {
-                                        style.bg(fade(hover_bg))
-                                    }),
-                            ),
+                            .truncate()
+                            .child(title.clone()),
                     )
                 })
                 // Status sits after the title, so activity never shifts it.
@@ -926,9 +903,10 @@ impl Workspace {
                     .flex()
                     .items_center()
                     .justify_center()
+                    .font_family(Theme::global().FONT_UI)
                     .text_size(px(11.0))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(accent)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(if active { accent } else { Theme::global().TEXT_FAINT })
                     .occlude()
                     .cursor_pointer()
                     .tooltip(move |_, cx| {
@@ -938,7 +916,11 @@ impl Workspace {
                     .child(
                         div()
                             .w(px((label_width - 4.0).max(0.0)))
-                            .rounded(px(3.0))
+                            .h(px(20.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(6.0))
                             .text_center()
                             .when(active, |el| el.bg(accent.opacity(0.16)))
                             .child(format!("{}", row + 1)),

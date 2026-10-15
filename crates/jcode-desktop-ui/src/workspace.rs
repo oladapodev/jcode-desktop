@@ -5030,8 +5030,26 @@ impl Workspace {
         let theme = Theme::global();
         // Swarm agents per coordinator, so a lead's card can show its team.
         let swarm = sidebar_swarm::groups(&self.sessions);
+        // Centred grid: three columns on a typical 1440 window, fewer when
+        // the canvas narrows. Cards stretch to fill the row exactly.
+        const OVERVIEW_MAX_W: f32 = 1080.0;
+        const OVERVIEW_GAP: f32 = 14.0;
+        const OVERVIEW_PAD: f32 = 40.0;
+        let canvas = self.last_canvas_width.unwrap_or(1200.0);
+        let content_w = (canvas - OVERVIEW_PAD * 2.0).clamp(260.0, OVERVIEW_MAX_W);
+        let columns = if content_w >= 900.0 {
+            3.0
+        } else if content_w >= 560.0 {
+            2.0
+        } else {
+            1.0
+        };
+        let card_w = ((content_w - OVERVIEW_GAP * (columns - 1.0)) / columns).floor();
+        let card_h = 164.0;
         let mut working_count = 0usize;
         let mut cards = Vec::new();
+        // Sessions that need the user: failed, or with an agent waiting/failed.
+        let mut needs: Vec<(usize, String, String, gpui::Rgba, &'static str)> = Vec::new();
         for (index, slot) in self.slots.iter().enumerate() {
             let panel = slot.panel.read(cx);
             let focused = index == self.active;
@@ -5107,17 +5125,61 @@ impl Workspace {
                         .child(place),
                 );
             }
+            let summary = sidebar_swarm::summary_state(&members);
+            if matches!(state, crate::panel::MinimapSessionState::Error) {
+                needs.push((index, title.to_string(), activity.clone(), theme.ERROR, "Failed"));
+            } else if !members.is_empty()
+                && matches!(
+                    summary,
+                    sidebar_swarm::AgentState::Waiting | sidebar_swarm::AgentState::Failed
+                )
+            {
+                let waiting = members
+                    .iter()
+                    .filter(|member| member.state == summary)
+                    .map(|member| member.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                needs.push((
+                    index,
+                    title.to_string(),
+                    format!("{waiting} {}", summary.word()),
+                    summary.color(),
+                    if summary == sidebar_swarm::AgentState::Waiting {
+                        "Needs you"
+                    } else {
+                        "Agent failed"
+                    },
+                ));
+            }
             if !members.is_empty() {
                 let count = members.len();
-                let summary = sidebar_swarm::summary_state(&members);
+                let tooltip_members = members.clone();
+                // SwarmStrip: one small status dot per agent, then the count.
                 meta = meta.child(
                     div()
+                        .id(("overview-agents", index))
                         .ml_auto()
                         .flex_none()
                         .flex()
                         .items_center()
-                        .gap(px(5.0))
-                        .child(sidebar_swarm::dot(summary, 6.0))
+                        .gap(px(6.0))
+                        .tooltip(move |_, cx| {
+                            cx.new(|_| sidebar_swarm::SwarmTooltip(tooltip_members.clone()))
+                                .into()
+                        })
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(3.0))
+                                .children(
+                                    members
+                                        .iter()
+                                        .take(8)
+                                        .map(|member| sidebar_swarm::dot(member.state, 7.0)),
+                                ),
+                        )
                         .child(format!("{count} agent{}", if count == 1 { "" } else { "s" })),
                 );
             }
@@ -5125,19 +5187,19 @@ impl Workspace {
             cards.push(
                 div()
                     .id(("overview-panel", index))
-                    .w(px(300.0))
-                    .h(px(148.0))
-                    .px(px(16.0))
-                    .py(px(14.0))
+                    .w(px(card_w))
+                    .h(px(card_h))
+                    .px(px(18.0))
+                    .py(px(16.0))
                     .flex()
                     .flex_col()
-                    .gap(px(8.0))
+                    .gap(px(10.0))
                     .font_family(theme.FONT_UI)
-                    .rounded(px(14.0))
+                    .rounded(px(16.0))
                     .bg(if focused { theme.HEADER_BG } else { theme.PANEL_BG })
                     .border_1()
                     .border_color(if focused {
-                        theme.ACCENT.opacity(0.55)
+                        theme.ACCENT.opacity(0.22)
                     } else {
                         gpui::transparent_black().into()
                     })
@@ -5189,7 +5251,7 @@ impl Workspace {
                             .line_height(relative(1.45))
                             .text_color(theme.TEXT_DIM)
                             .overflow_hidden()
-                            .line_clamp(2)
+                            .line_clamp(3)
                             .child(activity),
                     )
                     .children(todo.map(|(done, total)| {
@@ -5230,13 +5292,13 @@ impl Workspace {
         cards.push(
             div()
                 .id("overview-new")
-                .w(px(300.0))
-                .h(px(148.0))
+                .w(px(card_w))
+                .h(px(card_h))
                 .flex()
                 .items_center()
                 .justify_center()
                 .gap(px(8.0))
-                .rounded(px(14.0))
+                .rounded(px(16.0))
                 .font_family(theme.FONT_UI)
                 .text_size(px(13.0))
                 .bg(theme.PANEL_BG.opacity(0.45))
@@ -5259,27 +5321,99 @@ impl Workspace {
         );
 
         let sessions = self.slots.len();
+        let needs_count = needs.len();
+        let mut summary = format!("{sessions} session{}", if sessions == 1 { "" } else { "s" });
+        if working_count > 0 {
+            summary.push_str(&format!(", {working_count} working"));
+        }
+        let section_label = |label: &'static str| {
+            div()
+                .text_size(px(12.5))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(theme.TEXT_DIM)
+                .child(label)
+        };
+        let needs_rows = needs
+            .into_iter()
+            .take(5)
+            .map(|(index, title, detail, color, word)| {
+                div()
+                    .id(("overview-needs", index))
+                    .h(px(44.0))
+                    .px(px(16.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(12.0))
+                    .rounded(px(12.0))
+                    .bg(theme.PANEL_BG)
+                    .cursor_pointer()
+                    .hover(|el| el.bg(theme.HEADER_BG))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |this, _event, window, cx| {
+                            this.set_active(index, cx);
+                            this.overview = false;
+                            this.overview_progress.set(0.0, Instant::now());
+                            this.focus_active(window, cx);
+                            cx.notify();
+                        }),
+                    )
+                    .child(div().flex_none().size(px(8.0)).rounded_full().bg(color))
+                    .child(
+                        div()
+                            .flex_none()
+                            .max_w(px(260.0))
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_size(px(13.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.TEXT)
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_size(px(12.5))
+                            .text_color(theme.TEXT_FAINT)
+                            .child(detail),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.5))
+                            .text_color(color)
+                            .child(word),
+                    )
+                    .into_any_element()
+            })
+            .collect::<Vec<_>>();
         div()
+            .id("overview-scroll")
             .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
+            .overflow_y_scroll()
             .font_family(theme.FONT_UI)
             .child(
                 div()
-                    .max_w(px(960.0))
-                    .p_8()
+                    .w(px(content_w))
+                    .mx_auto()
+                    .pt(px(48.0))
+                    .pb(px(48.0))
                     .flex()
                     .flex_col()
-                    .gap(px(16.0))
+                    .gap(px(28.0))
                     .child(
                         div()
                             .flex()
                             .items_baseline()
-                            .gap(px(10.0))
+                            .gap(px(12.0))
                             .child(
                                 div()
-                                    .text_size(px(17.0))
+                                    .text_size(px(20.0))
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                     .text_color(theme.TEXT)
                                     .child("Overview"),
@@ -5288,25 +5422,45 @@ impl Workspace {
                                 div()
                                     .text_size(px(12.5))
                                     .text_color(theme.TEXT_FAINT)
-                                    .child(match working_count {
-                                        0 => format!(
-                                            "{sessions} session{}",
-                                            if sessions == 1 { "" } else { "s" }
-                                        ),
-                                        working => format!(
-                                            "{sessions} session{}, {working} working",
-                                            if sessions == 1 { "" } else { "s" }
-                                        ),
-                                    }),
+                                    .child(summary),
                             ),
                     )
+                    .when(needs_count > 0, |el| {
+                        el.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(10.0))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(8.0))
+                                        .child(section_label("Needs you"))
+                                        .child(
+                                            div()
+                                                .text_size(px(11.5))
+                                                .text_color(theme.TEXT_FAINT)
+                                                .child(needs_count.to_string()),
+                                        ),
+                                )
+                                .child(div().flex().flex_col().gap(px(6.0)).children(needs_rows)),
+                        )
+                    })
                     .child(
                         div()
                             .flex()
-                            .flex_row()
-                            .flex_wrap()
-                            .gap(px(12.0))
-                            .children(cards),
+                            .flex_col()
+                            .gap(px(10.0))
+                            .when(needs_count > 0, |el| el.child(section_label("Sessions")))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .flex_wrap()
+                                    .gap(px(OVERVIEW_GAP))
+                                    .children(cards),
+                            ),
                     ),
             )
             .into_any_element()
@@ -7175,25 +7329,25 @@ impl Workspace {
                                 .text_color(ink)
                                 .child(account.display_name.clone()),
                         )
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_size(px(11.0))
-                                .text_color(Theme::global().TEXT_FAINT)
-                                .child(account.auth_kind.clone()),
-                        ),
-                )
-                .child(
-                    div()
-                        .debug_selector(|| format!("account-{}-status", account.id))
-                        .text_size(px(11.0))
-                        .line_height(px(14.0))
-                        .text_color(if account.status == "expired" {
-                            Theme::global().WARN
-                        } else {
-                            Theme::global().TEXT_DIM
-                        })
-                        .child(account.status_label()),
+                        // The group heading already says Connected or Not
+                        // connected. A chip appears only when the row has
+                        // something more to say, such as an expired sign-in.
+                        .when(account.status == "expired", |el| {
+                            el.child(
+                                div()
+                                    .debug_selector(|| format!("account-{}-status", account.id))
+                                    .flex_none()
+                                    .px(px(7.0))
+                                    .h(px(18.0))
+                                    .flex()
+                                    .items_center()
+                                    .rounded_full()
+                                    .bg(Theme::global().WARN.opacity(0.14))
+                                    .text_size(px(10.5))
+                                    .text_color(Theme::global().WARN)
+                                    .child("Expired"),
+                            )
+                        }),
                 );
 
             if available && !account.limits.is_empty() {
@@ -7514,8 +7668,24 @@ impl Workspace {
     fn render_theme_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let active = Theme::active_preset();
         let theme = Theme::global();
-        let mut grid = div().flex().flex_wrap().gap(px(8.0)).px(px(4.0));
-        for (index, preset) in ThemePreset::ALL.into_iter().enumerate() {
+        let is_studio =
+            |preset: ThemePreset| matches!(preset, ThemePreset::StudioDark | ThemePreset::StudioLight);
+        // Studio first (the defaults), then everything else in catalogue order.
+        // Selectors keep the preset's catalogue index so they stay stable.
+        let ordered = ThemePreset::ALL
+            .into_iter()
+            .enumerate()
+            .filter(|(_, preset)| is_studio(*preset))
+            .chain(
+                ThemePreset::ALL
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(_, preset)| !is_studio(*preset)),
+            );
+        let new_grid = || div().flex_none().flex().flex_wrap().gap(px(6.0)).px(px(4.0));
+        let mut studio = new_grid();
+        let mut more = new_grid();
+        for (index, preset) in ordered {
             let selected = preset == active;
             let t = Theme::preview(preset);
             let line = |width: f32, color: gpui::Rgba| {
@@ -7524,9 +7694,9 @@ impl Workspace {
             // A miniature workspace in the preset's own palette. Only the
             // selected card gets a ring, in the current accent.
             let swatch = div()
-                .h(px(40.0))
+                .h(px(34.0))
                 .w_full()
-                .p(px(5.0))
+                .p(px(4.0))
                 .flex()
                 .gap(px(4.0))
                 .rounded(px(7.0))
@@ -7548,7 +7718,7 @@ impl Workspace {
                         .child(line(42.0, t.TEXT_DIM))
                         .child(line(18.0, t.ACCENT)),
                 );
-            grid = grid.child(
+            let card = 
                 div()
                     .id(("theme-preset", index))
                     .debug_selector(move || format!("theme-preset-{index}"))
@@ -7577,26 +7747,37 @@ impl Workspace {
                             .px(px(2.0))
                             .pb(px(1.0))
                             .truncate()
-                            .text_size(px(12.5))
+                            .text_size(px(12.0))
                             .when(selected, |el| el.font_weight(gpui::FontWeight::MEDIUM))
                             .text_color(if selected { theme.TEXT } else { theme.TEXT_DIM })
                             .child(preset.label()),
-                    ),
-            );
+                    );
+            if is_studio(preset) {
+                studio = studio.child(card);
+            } else {
+                more = more.child(card);
+            }
         }
+        // Every child is flex_none so the column overflows (and scrolls)
+        // instead of squeezing the last row of swatches out of view.
         div()
             .id("theme-settings")
             .debug_selector(|| "theme-settings".into())
             .size_full()
             .px(px(8.0))
-            .py(px(10.0))
+            .pt(px(10.0))
+            .pb(px(24.0))
             .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(px(6.0))
+            .gap(px(2.0))
             .font_family(theme.FONT_UI)
             .child(settings_rows::page_title("Theme"))
-            .child(grid)
+            .child(settings_rows::section_label("Studio"))
+            .child(studio)
+            .child(settings_rows::section_label("More"))
+            .child(more)
+            .child(div().flex_none().h(px(12.0)))
             .into_any_element()
     }
 
@@ -8005,24 +8186,16 @@ impl Workspace {
             .flex_row()
             .items_center()
             .gap_3()
-            .child(
-                div()
-                    .w(px(150.0))
-                    .flex_none()
-                    .text_size(px(12.0))
-                    .font_family(Theme::global().FONT_UI)
-                    .text_color(if known {
-                        Theme::global().TEXT_DIM
-                    } else {
-                        Theme::global().TEXT
-                    })
-                    .child(skill.keys),
-            )
+            .min_h(px(30.0))
+            .px(px(8.0))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(px(12.0))
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_size(px(13.0))
                     .text_color(if known {
                         Theme::global().TEXT_DIM
                     } else {
@@ -8030,15 +8203,16 @@ impl Workspace {
                     })
                     .child(skill.label),
             )
+            .child(hint_keycaps(skill.keys))
             // The bar is the model's belief, not a usage count: it decays when
             // a shortcut goes unused, so it reads as "how well you know this".
             .child(
                 div()
-                    .w(px(56.0))
+                    .w(px(48.0))
                     .h(px(4.0))
                     .flex_none()
                     .rounded_full()
-                    .bg(Theme::global().PANEL_BORDER)
+                    .bg(Theme::global().TOOL_BG)
                     .child(
                         div()
                             .w(relative(mastery.clamp(0.02, 1.0)))
@@ -8062,127 +8236,166 @@ impl Workspace {
         let overall = self.coach.overall_mastery(now);
         let next = self.coach.next_lesson(now);
 
+        let theme = Theme::global();
+        let section_label = |text: String| {
+            div()
+                .mt_2()
+                .px(px(8.0))
+                .text_size(px(11.0))
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(theme.TEXT_FAINT)
+                .child(text)
+        };
         let mut card = div()
             .id("hints-card")
             .debug_selector(|| "coach-card".into())
             .relative()
             .top(px((1.0 - progress) * 12.0))
             .w(px(560.0))
-            .p_6()
+            .max_h(relative(0.9))
+            .overflow_y_scroll()
+            .p_5()
             .flex()
             .flex_col()
-            .gap_3()
-            .bg(Theme::global().PANEL_BG)
-            .border_1()
-            .border_color(Theme::global().PANEL_BORDER_FOCUS)
-            .rounded_xl()
+            .gap(px(2.0))
+            .bg(theme.PANEL_BG)
+            .rounded(px(14.0))
             .child(
                 div()
+                    .px(px(8.0))
                     .flex()
                     .justify_between()
                     .items_center()
-                    .child(div().text_size(px(18.0)).child("Your workspace fluency"))
                     .child(
                         div()
-                            .text_color(Theme::global().TEXT_DIM)
-                            .text_size(px(11.0))
-                            .child("Super+/ or F1 to close"),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap_4()
-                    .text_size(px(11.0))
-                    .text_color(Theme::global().TEXT_DIM)
-                    .child(format!("{}% learned", (overall * 100.0).round() as u32))
-                    .child(format!("{} keystrokes saved", self.coach.effort_saved))
-                    .child(format!("{} spent the long way", self.coach.effort_wasted)),
-            );
-
-        if let Some(next) = next {
-            card = card.child(
-                div()
-                    .p_2p5()
-                    .rounded_lg()
-                    .bg(Theme::global().HEADER_BG)
-                    .border_1()
-                    .border_color(Theme::global().PANEL_BORDER)
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(Theme::global().TEXT_DIM)
-                            .child("learn next"),
+                            .text_size(px(15.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(theme.TEXT)
+                            .child("Workspace fluency"),
                     )
                     .child(
                         div()
                             .flex()
-                            .flex_row()
-                            .gap_2()
                             .items_center()
-                            .child(
-                                div()
-                                    .font_family(Theme::global().FONT_MONO)
-                                    .text_size(px(12.0))
-                                    .child(next.keys),
-                            )
-                            .child(div().text_size(px(12.0)).child(next.label)),
+                            .gap(px(4.0))
+                            .text_size(px(11.0))
+                            .text_color(theme.TEXT_FAINT)
+                            .child(hint_keycap("F1"))
+                            .child("to close"),
                     ),
+            )
+            .child(
+                div()
+                    .px(px(8.0))
+                    .pb_1()
+                    .flex()
+                    .flex_row()
+                    .gap_3()
+                    .text_size(px(11.0))
+                    .text_color(theme.TEXT_FAINT)
+                    .child(format!("{}% learned", (overall * 100.0).round() as u32))
+                    .child(format!("{} keystrokes saved", self.coach.effort_saved))
+                    .child(format!("{} the long way", self.coach.effort_wasted)),
             );
+
+        if let Some(next) = next {
+            card = card
+                .child(section_label("Learn next".into()))
+                .child(
+                    div()
+                        .min_h(px(30.0))
+                        .px(px(8.0))
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_size(px(13.0))
+                                .text_color(theme.TEXT)
+                                .child(next.label),
+                        )
+                        .child(hint_keycaps(next.keys)),
+                );
         }
 
-        card = card.child(
-            div()
-                .p_2p5()
-                .rounded_lg()
-                .bg(Theme::global().HEADER_BG)
-                .text_size(px(11.0))
-                .text_color(Theme::global().TEXT_DIM)
-                .child("F2 rename session · Composer: ↑/↓ history · Ctrl+K/J prompts · Ctrl+W word delete · Alt+B/F word move · Ctrl+U delete to start · Ctrl/Cmd+Z undo · Esc clear"),
-        );
-
         for (area, rows) in self.coach.report(now) {
-            card = card.child(
-                div()
-                    .mt_1()
-                    .text_size(px(10.0))
-                    .text_color(Theme::global().TEXT_DIM)
-                    .child(area.label()),
-            );
+            let label = area.label();
+            let mut chars = label.chars();
+            let label = chars
+                .next()
+                .map(|first| first.to_uppercase().chain(chars).collect::<String>())
+                .unwrap_or_default();
+            card = card.child(section_label(label));
             for (skill, mastery) in rows {
                 card = card.child(self.render_skill_row(skill, mastery));
             }
         }
 
+        // Composer keys as one quiet row of keycaps, no prose.
+        card = card.child(section_label("Composer".into())).child(
+            div()
+                .px(px(8.0))
+                .py_1()
+                .flex()
+                .flex_wrap()
+                .gap_x_3()
+                .gap_y_1p5()
+                .text_size(px(12.0))
+                .text_color(theme.TEXT_DIM)
+                .children(
+                    [
+                        ("F2", "Rename"),
+                        ("↑ ↓", "History"),
+                        ("Ctrl K J", "Prompts"),
+                        ("Ctrl W", "Delete word"),
+                        ("Ctrl U", "Delete to start"),
+                        ("Ctrl Z", "Undo"),
+                        ("Esc", "Clear"),
+                    ]
+                    .into_iter()
+                    .map(|(keys, label)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(hint_keycaps(keys))
+                            .child(label)
+                    }),
+                ),
+        );
+
         card = card.child(
             div()
                 .id("new-help-session")
                 .mt_3()
-                .p_3()
-                .rounded_lg()
-                .bg(Theme::global().HEADER_BG)
-                .border_1()
-                .border_color(Theme::global().PANEL_BORDER)
+                .h(px(32.0))
+                .px_3()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(9.0))
+                .bg(theme.TOOL_BG)
+                .text_size(px(13.0))
+                .text_color(theme.TEXT)
                 .cursor_pointer()
-                .hover(|el| el.border_color(Theme::global().ACCENT))
+                .hover(|el| el.bg(Theme::global().USER_BG))
+                .tooltip(|_, cx| {
+                    cx.new(|_| {
+                        remotes::HeaderTooltip(
+                            "Opens a session with the hints and bundled docs".into(),
+                        )
+                    })
+                    .into()
+                })
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(|this, _event, window, cx| {
                         this.new_help_session(&NewHelpSession, window, cx);
                     }),
                 )
-                .child("Ask Jcode about the app")
-                .child(
-                    div()
-                        .mt_1()
-                        .text_size(px(11.0))
-                        .text_color(Theme::global().TEXT_DIM)
-                        .child("Opens a new session with the hints and bundled docs loaded into context."),
-                ),
+                .child("Ask Jcode about the app"),
         );
 
         div()
@@ -8192,10 +8405,73 @@ impl Workspace {
             .items_center()
             .justify_center()
             .opacity(progress)
-            .bg(gpui::rgba(0x000000b8))
+            .bg(gpui::rgba(0x00000080))
             .child(card)
             .into_any_element()
     }
+}
+
+/// One small keycap chip for the hints overlay.
+fn hint_keycap(key: &str) -> gpui::Div {
+    div()
+        .flex_none()
+        .min_w(px(20.0))
+        .h(px(20.0))
+        .px(px(6.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(6.0))
+        .bg(Theme::global().TOOL_BG)
+        .font_family(Theme::global().FONT_UI)
+        .text_size(px(11.0))
+        .text_color(Theme::global().TEXT_DIM)
+        .child(key.to_owned())
+}
+
+/// Render a skill's key text (`super-shift-h / super-shift-l`, `Ctrl K J`) as
+/// keycap chips. Alternatives are separated by a faint slash.
+fn hint_keycaps(keys: &str) -> gpui::Div {
+    let pretty = |key: &str| -> String {
+        match key {
+            "super" => if cfg!(target_os = "macos") { "⌘" } else { "Super" }.into(),
+            "shift" => "Shift".into(),
+            "tab" => "Tab".into(),
+            "enter" => "Enter".into(),
+            "home" => "Home".into(),
+            "end" => "End".into(),
+            other if other.len() == 1 => other.to_uppercase(),
+            other => other.to_owned(),
+        }
+    };
+    let mut row = div().flex_none().flex().items_center().gap(px(3.0));
+    let alternatives = keys.split(" / ").collect::<Vec<_>>();
+    for (index, alternative) in alternatives.iter().enumerate() {
+        if index > 0 {
+            row = row.child(
+                div()
+                    .px(px(2.0))
+                    .text_size(px(11.0))
+                    .text_color(Theme::global().TEXT_FAINT)
+                    .child("/"),
+            );
+        }
+        if alternative.contains(" .. ") {
+            let (a, b) = alternative.split_once(" .. ").unwrap_or((alternative, ""));
+            let last = |part: &str| pretty(part.rsplit('-').next().unwrap_or(part));
+            let mods = a.rsplit_once('-').map(|(m, _)| m).unwrap_or("");
+            for part in mods.split('-').filter(|p| !p.is_empty()) {
+                row = row.child(hint_keycap(&pretty(part)));
+            }
+            row = row.child(hint_keycap(&format!("{}–{}", last(a), last(b))));
+            continue;
+        }
+        let separator = if alternative.contains('-') { '-' } else { ' ' };
+        for part in alternative.split(separator).filter(|p| !p.is_empty()) {
+            row = row.child(hint_keycap(&pretty(part)));
+        }
+    }
+    row
 }
 
 impl Workspace {
@@ -8223,21 +8499,26 @@ impl Workspace {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .border_t_1()
-            .border_b_1()
-            .border_color(Theme::global().PANEL_BORDER);
+            .px(px(6.0))
+            .flex()
+            .flex_col()
+            .gap(px(1.0));
 
         if let Some(parent) = directory.parent().map(Path::to_path_buf) {
             list = list.child(
                 div()
                     .id("folder-picker-parent")
                     .debug_selector(|| "folder-picker-parent".into())
-                    .px_4()
-                    .py_2()
+                    .flex_none()
+                    .h(px(34.0))
+                    .flex()
+                    .items_center()
+                    .px(px(10.0))
+                    .rounded(px(8.0))
                     .cursor_pointer()
                     .text_color(Theme::global().TEXT_DIM)
                     .hover(|el| {
-                        el.bg(Theme::global().HEADER_BG)
+                        el.bg(Theme::global().USER_BG)
                             .text_color(Theme::global().TEXT)
                     })
                     .on_mouse_down(
@@ -8270,10 +8551,14 @@ impl Workspace {
                 div()
                     .id(("folder-picker-entry", index))
                     .debug_selector(move || format!("folder-picker-entry-{index}").into())
-                    .px_4()
-                    .py_2()
+                    .flex_none()
+                    .h(px(34.0))
+                    .flex()
+                    .items_center()
+                    .px(px(10.0))
+                    .rounded(px(8.0))
                     .cursor_pointer()
-                    .hover(|el| el.bg(Theme::global().HEADER_BG))
+                    .hover(|el| el.bg(Theme::global().USER_BG))
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         cx.stop_propagation();
                         if sets_default {
@@ -8284,6 +8569,8 @@ impl Workspace {
                     }))
                     .child(
                         div()
+                            .flex_1()
+                            .min_w_0()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -8298,8 +8585,9 @@ impl Workspace {
                             .when(!reason.is_empty(), |el| {
                                 el.child(
                                     div()
-                                        .text_size(px(10.0))
-                                        .text_color(Theme::global().TEXT_DIM)
+                                        .flex_none()
+                                        .text_size(px(11.5))
+                                        .text_color(Theme::global().TEXT_FAINT)
                                         .child(reason),
                                 )
                             }),
@@ -8346,7 +8634,7 @@ impl Workspace {
                     .inset_0()
                     .items_center()
                     .justify_center()
-                    .bg(gpui::rgba(0x000000cc))
+                    .bg(gpui::rgba(0x00000066))
             })
             .flex()
             .child(
@@ -8360,46 +8648,63 @@ impl Workspace {
                     })
                     .flex()
                     .flex_col()
+                    .font_family(Theme::global().FONT_UI)
+                    .text_size(px(13.0))
                     .when(!inline, |el| {
-                        el.rounded_lg()
+                        let mut surface = Theme::global().HEADER_BG;
+                        surface.a = 1.0;
+                        el.rounded(px(16.0))
                             .border_1()
-                            .border_color(Theme::global().PANEL_BORDER_FOCUS)
-                            .bg(Theme::global().PANEL_BG)
+                            .border_color(Theme::global().PANEL_BORDER)
+                            .bg(surface)
+                            .overflow_hidden()
                     })
                     .child(
                         div()
-                            .px_4()
-                            .py_3()
+                            .px(px(16.0))
+                            .pt(px(14.0))
+                            .pb(px(2.0))
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(div().text_size(px(14.0)).child(
-                                if self.folder_picker_sets_default {
-                                    "Default directory"
-                                } else {
-                                    "open folder"
-                                },
-                            ))
+                            .child(
+                                div()
+                                    .text_size(px(15.0))
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child(if self.folder_picker_sets_default {
+                                        "Default directory"
+                                    } else {
+                                        "Open folder"
+                                    }),
+                            )
                             .child(
                                 div()
                                     .id("folder-picker-cancel")
                                     .debug_selector(|| "folder-picker-cancel".into())
                                     .cursor_pointer()
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded_full()
+                                    .text_size(px(12.5))
                                     .text_color(Theme::global().TEXT_DIM)
-                                    .hover(|el| el.text_color(Theme::global().TEXT))
+                                    .hover(|el| {
+                                        el.bg(Theme::global().USER_BG)
+                                            .text_color(Theme::global().TEXT)
+                                    })
                                     .on_click(cx.listener(|this, _event, _window, cx| {
                                         cx.stop_propagation();
                                         this.close_folder_picker(cx);
                                     }))
-                                    .child("cancel"),
+                                    .child("Cancel"),
                             ),
                     )
                     .child(
                         div()
-                            .px_4()
-                            .pb_3()
-                            .text_size(px(11.0))
-                            .text_color(Theme::global().TEXT_DIM)
+                            .px(px(16.0))
+                            .pb(px(10.0))
+                            .text_size(px(11.5))
+                            .text_color(Theme::global().TEXT_FAINT)
+                            .truncate()
                             .child(if self.folder_picker_sets_default {
                                 self.default_directory_description(&directory)
                             } else {
@@ -8408,19 +8713,21 @@ impl Workspace {
                     )
                     .child(
                         div()
-                            .px_4()
-                            .pb_3()
+                            .px(px(16.0))
+                            .pb(px(10.0))
                             .flex()
-                            .gap_2()
+                            .gap(px(6.0))
+                            .text_size(px(12.5))
                             .child(
                                 div()
                                     .id("folder-picker-home")
                                     .debug_selector(|| "folder-picker-home".into())
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded_full()
                                     .cursor_pointer()
-                                    .bg(Theme::global().HEADER_BG)
+                                    .bg(Theme::global().USER_BG)
+                                    .text_color(Theme::global().TEXT_DIM)
                                     .hover(|el| el.text_color(Theme::global().TEXT))
                                     .on_mouse_down(
                                         gpui::MouseButton::Left,
@@ -8430,17 +8737,18 @@ impl Workspace {
                                             }
                                         }),
                                     )
-                                    .child("⌂  home"),
+                                    .child("Home"),
                             )
                             .child(
                                 div()
                                     .id("folder-picker-computer")
                                     .debug_selector(|| "folder-picker-computer".into())
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded_full()
                                     .cursor_pointer()
-                                    .bg(Theme::global().HEADER_BG)
+                                    .bg(Theme::global().USER_BG)
+                                    .text_color(Theme::global().TEXT_DIM)
                                     .hover(|el| el.text_color(Theme::global().TEXT))
                                     .on_mouse_down(
                                         gpui::MouseButton::Left,
@@ -8448,7 +8756,7 @@ impl Workspace {
                                             this.browse_to(filesystem_root(), cx);
                                         }),
                                     )
-                                    .child("▣  computer"),
+                                    .child("Computer"),
                             ),
                     )
                     .when_some(self.folder_search.clone(), |el, search| {
@@ -8456,13 +8764,11 @@ impl Workspace {
                             div()
                                 .id("folder-picker-search")
                                 .debug_selector(|| "folder-picker-search".into())
-                                .mx_4()
-                                .mb_3()
-                                .px_3()
-                                .py_2()
-                                .rounded_md()
-                                .border_1()
-                                .border_color(Theme::global().INPUT_BORDER)
+                                .mx(px(12.0))
+                                .mb(px(8.0))
+                                .px(px(10.0))
+                                .py(px(6.0))
+                                .rounded(px(10.0))
                                 .bg(Theme::global().INPUT_BG)
                                 .child(search),
                         )
@@ -8483,12 +8789,13 @@ impl Workspace {
                             div()
                                 .id("folder-picker-open")
                                 .debug_selector(|| "folder-picker-open".into())
-                                .px_4()
-                                .py_2()
-                                .rounded_md()
+                                .px(px(14.0))
+                                .py(px(6.0))
+                                .rounded_full()
                                 .cursor_pointer()
                                 .bg(Theme::global().ACCENT)
                                 .text_color(Theme::global().BG)
+                                .font_weight(gpui::FontWeight::MEDIUM)
                                 // Keep the modal mounted until release. Opening on
                                 // mouse-down lets the rest of the click hit the
                                 // newly repositioned strip and steal draft focus.
@@ -11873,15 +12180,13 @@ mod tests {
         assert!(ready.bottom() <= disconnected.top());
         assert!(disconnected.bottom() <= signed_out.top());
         assert!(vcx.debug_bounds("account-openai-history").is_none());
-        for id in ["openai", "claude", "openrouter"] {
-            let row = vcx
-                .debug_bounds(Box::leak(format!("account-{id}").into_boxed_str()))
-                .unwrap();
-            let status = vcx
-                .debug_bounds(Box::leak(format!("account-{id}-status").into_boxed_str()))
-                .unwrap();
-            assert!(status.top() >= row.top() && status.bottom() <= row.bottom());
-        }
+        // Only the expired row carries a status chip. The group headings
+        // already say which rows are connected.
+        let row = vcx.debug_bounds("account-claude").unwrap();
+        let status = vcx.debug_bounds("account-claude-status").unwrap();
+        assert!(status.top() >= row.top() && status.bottom() <= row.bottom());
+        assert!(vcx.debug_bounds("account-openai-status").is_none());
+        assert!(vcx.debug_bounds("account-openrouter-status").is_none());
         workspace.update(vcx, |w, cx| {
             for account in &mut w.accounts {
                 account.status = "not_configured".into();
@@ -11891,7 +12196,7 @@ mod tests {
         vcx.run_until_parked();
         assert!(vcx.debug_bounds("accounts-connected-heading").is_none());
         assert!(vcx.debug_bounds("accounts-disconnected-heading").is_some());
-        assert!(vcx.debug_bounds("account-openrouter-status").is_some());
+        assert!(vcx.debug_bounds("account-openrouter").is_some());
     }
 
     #[gpui::test]

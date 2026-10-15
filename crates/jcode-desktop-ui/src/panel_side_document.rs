@@ -335,7 +335,35 @@ impl Panel {
                             )),
                     ),
             )
-            .child(body)
+            .child({
+                // Long lines scroll horizontally. A short fade at the right
+                // edge makes the clip read as deliberate rather than cut off.
+                let clear = gpui::Rgba {
+                    a: 0.0,
+                    ..theme.CODE_BG
+                };
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(body)
+                    .child(
+                        div()
+                            .debug_selector(|| "code-file-edge-fade".into())
+                            .absolute()
+                            .top_0()
+                            .bottom_0()
+                            .right_0()
+                            .w(px(28.0))
+                            .bg(gpui::linear_gradient(
+                                90.,
+                                gpui::linear_color_stop(clear, 0.),
+                                gpui::linear_color_stop(theme.CODE_BG, 1.),
+                            )),
+                    )
+            })
             .into_any_element()
     }
 

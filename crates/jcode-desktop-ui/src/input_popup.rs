@@ -6,16 +6,82 @@ use gpui::{
 };
 
 const EDGE: f32 = 8.;
-// One-pixel borders and p_1 (four pixels) on both vertical sides.
-const CHROME: f32 = 10.;
+// One-pixel borders and six pixels of padding on both vertical sides.
+const CHROME: f32 = 14.;
+/// Popover corner radius shared by the slash menu and model picker.
+pub(super) const RADIUS: f32 = 12.;
+/// One row: icon tile, label and same-line description.
+pub(super) const ROW_HEIGHT: f32 = 34.;
+
+/// Opaque popover surface. Popovers cover content, never the desktop, so a
+/// translucent palette must not let transcript ink show through.
+pub(super) fn surface() -> gpui::Rgba {
+    let mut surface = crate::theme::Theme::global().HEADER_BG;
+    surface.a = 1.0;
+    surface
+}
+
+/// Row highlight for keyboard selection and hover. A light wash of the text
+/// ink over the popover surface reads in every palette, including ones where
+/// `USER_BG` and `HEADER_BG` coincide.
+pub(super) fn highlight() -> gpui::Rgba {
+    let theme = crate::theme::Theme::global();
+    surface().blend(gpui::Rgba {
+        a: 0.075,
+        ..theme.TEXT
+    })
+}
+
+/// The single soft shadow popovers are allowed.
+pub(super) fn shadow() -> Vec<gpui::BoxShadow> {
+    vec![gpui::BoxShadow {
+        color: gpui::hsla(0., 0., 0., 0.22),
+        offset: point(px(0.), px(8.)),
+        blur_radius: px(24.),
+        spread_radius: px(-6.),
+        inset: false,
+    }]
+}
+
+/// Hover detail for a menu row, in the shared tooltip style.
+pub(super) struct Tooltip(pub(super) gpui::SharedString);
+
+impl Render for Tooltip {
+    fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = crate::theme::Theme::global();
+        gpui::div()
+            .max_w(px(360.))
+            .px(px(9.))
+            .py(px(6.))
+            .rounded(px(8.))
+            .bg(surface())
+            .border_1()
+            .border_color(theme.PANEL_BORDER)
+            .font_family(theme.FONT_UI)
+            .text_size(px(11.5))
+            .text_color(theme.TEXT_DIM)
+            .child(self.0.clone())
+    }
+}
 /// Room for a group header and about three model rows.
 const MIN_ABOVE: f32 = 200.;
 
+/// The model picker's search row above its scrolling list.
+pub(super) const SEARCH_ROW: f32 = 38.;
+
+/// The search row only mirrors the typed query, so tiny windows drop it and
+/// keep every pixel for the list itself.
+pub(super) fn search_row_fits(viewport: Pixels) -> bool {
+    f32::from(viewport) >= 320.
+}
+
 pub(super) fn scroll_height(viewport: Pixels, model: bool) -> Pixels {
     let height = f32::from(viewport);
+    let search = model && search_row_fits(viewport);
+    let chrome = CHROME + if search { SEARCH_ROW } else { 0. };
     px((height * if model { 0.6 } else { 0.35 })
         .min(if model { 480. } else { 280. })
-        .min((height - 2. * EDGE - CHROME).max(0.)))
+        .min((height - 2. * EDGE - chrome).max(0.)))
 }
 
 fn origin(

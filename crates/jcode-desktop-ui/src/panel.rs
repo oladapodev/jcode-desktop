@@ -147,6 +147,8 @@ mod tab_outline;
 pub(crate) use tab_outline::TabRing;
 #[path = "panel_tool_streaming.rs"]
 mod tool_streaming;
+#[path = "panel_run_summary.rs"]
+mod run_summary;
 #[path = "panel_usage.rs"]
 pub(crate) mod usage;
 #[path = "panel_voice.rs"]
@@ -291,6 +293,10 @@ pub enum Item {
     /// a tool call. Only ever a derived render row, never stored in `items`.
     #[serde(skip)]
     Applet(String),
+    /// A folded run of finished tool calls. Only ever a derived render row,
+    /// never stored in `items`.
+    #[serde(skip)]
+    ToolRun(run_summary::ToolRun),
 }
 
 #[derive(Clone)]
@@ -319,6 +325,8 @@ struct TranscriptDerivedKey {
     /// Visible live text, reasoning, by pointer-free content hash.
     streaming: u64,
     expansions: u64,
+    /// Expanded tool runs, and whether the current turn's runs stay open.
+    runs: (u64, bool),
     display: crate::config::DisplayConfig,
 }
 
@@ -556,6 +564,13 @@ pub struct Panel {
     awaiting_persisted: bool,
     /// Tool rows the user expanded, keyed by call id.
     expanded_tools: HashSet<String>,
+    /// Folded tool runs the user expanded, keyed by the run's first call id.
+    expanded_runs: HashSet<String>,
+    /// Calls that render as inline applet cards, which never fold into a run.
+    run_card_calls: HashSet<String>,
+    /// The rows the virtual list last reflected, so folding a run can splice
+    /// exactly the rows it changed.
+    spliced_rows: Option<Arc<Vec<TranscriptRenderRow>>>,
     /// Retain closing cards until their fade finishes, and allow smooth reversal.
     tool_detail_motion: HashMap<String, crate::transition::AnimatedValue>,
     prompt_queue: queue::PromptQueue,
@@ -1018,6 +1033,15 @@ impl Panel {
             provisional_task: None,
             awaiting_persisted: false,
             expanded_tools: HashSet::new(),
+            expanded_runs: if crate::harness::screenshot_mode()
+                && fixture.as_deref() == Some("tool-icons")
+            {
+                ["icon-0", "icon-6"].map(str::to_owned).into()
+            } else {
+                HashSet::new()
+            },
+            run_card_calls: HashSet::new(),
+            spliced_rows: None,
             tool_detail_motion: HashMap::new(),
             prompt_queue: queue::PromptQueue::default(),
             pending_users: VecDeque::new(),
@@ -1405,19 +1429,25 @@ impl Panel {
             .collect::<Vec<_>>();
         tasks.sort_by(|a, b| b.priority.cmp(&a.priority));
 
-        let mut projects = div().flex().flex_wrap().gap_1().child(
+        // Project filters are real chips: quiet text, a soft fill when chosen.
+        let chip = |selected: bool| {
+            let theme = Theme::global();
             div()
-                .id("todoist-project-all")
-                .px_2()
-                .py_1()
-                .rounded_md()
+                .h(px(26.))
+                .px(px(10.))
+                .rounded_full()
                 .cursor_pointer()
-                .bg(if selected.is_none() {
-                    Theme::global().ACCENT_DIM
-                } else {
-                    Theme::global().HEADER_BG
-                })
-                .text_size(px(11.))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .text_size(px(12.))
+                .bg(if selected { theme.USER_BG } else { theme.TOOL_BG })
+                .text_color(if selected { theme.TEXT } else { theme.TEXT_DIM })
+                .hover(move |el| el.text_color(theme.TEXT))
+        };
+        let mut projects = div().flex().flex_wrap().gap(px(6.)).child(
+            chip(selected.is_none())
+                .id("todoist-project-all")
                 .child("All")
                 .on_mouse_down(
                     gpui::MouseButton::Left,
@@ -1433,25 +1463,11 @@ impl Panel {
             let project_id = project.id.clone();
             let is_selected = selected.as_deref() == Some(project.id.as_str());
             projects = projects.child(
-                div()
+                chip(is_selected)
                     .id(("todoist-project", index))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .bg(if is_selected {
-                        Theme::global().ACCENT_DIM
-                    } else {
-                        Theme::global().HEADER_BG
-                    })
-                    .hover(|el| el.bg(Theme::global().ACCENT_DIM))
-                    .text_size(px(11.))
                     .child(
                         div()
-                            .size(px(7.))
+                            .size(px(6.))
                             .rounded_full()
                             .bg(todoist_named_color(project.color.as_deref())),
                     )
@@ -1479,20 +1495,30 @@ impl Panel {
             .px_4()
             .pb_4()
             .flex()
+            .flex_col();
+        // One calm card holds the rows, like the transcript todo card.
+        let mut rows = div()
+            .flex()
             .flex_col()
-            .gap_1();
-        if tasks.is_empty() {
+            .p(px(6.))
+            .gap(px(1.))
+            .rounded(px(14.))
+            .bg(Theme::global().TOOL_BG);
+        let tasks_empty = tasks.is_empty();
+        if tasks_empty {
             let message = match &state.load {
                 TodoistLoadState::Loading => "Loading Todoist…".to_owned(),
                 TodoistLoadState::Ready => "No open tasks in this view.".to_owned(),
                 TodoistLoadState::Error(error) => format!(
-                    "{error}\n\nSet TODOIST_API_TOKEN, then refresh. The token is never written to Jcode config."
+                    "{error}\n\nSet TODOIST_API_TOKEN, then refresh."
                 ),
             };
             list = list.child(
                 div()
-                    .p_4()
+                    .px_1()
+                    .py_2()
                     .whitespace_normal()
+                    .text_size(px(13.))
                     .text_color(match state.load {
                         TodoistLoadState::Error(_) => Theme::global().ERROR,
                         _ => Theme::global().TEXT_DIM,
@@ -1509,33 +1535,45 @@ impl Panel {
                 .find(|project| project.id == task.project_id)
                 .map(|p| p.name.clone());
             let priority = todoist_priority_color(task.priority);
-            list = list.child(
+            // Project and priority stay in the tooltip; the row shows only the
+            // task and, when set, its due date as quiet trailing meta.
+            let tip = [
+                project_name,
+                (task.priority > 1).then(|| format!("Priority {}", 5 - task.priority)),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+            rows = rows.child(
                 div()
                     .id(("todoist-task", index))
                     .debug_selector(move || format!("todoist-task-{index}"))
                     .flex_none()
-                    .px_3()
-                    .py_2()
-                    .rounded_lg()
-                    .border_1()
-                    .border_color(Theme::global().PANEL_BORDER_IDLE)
-                    .bg(Theme::global().BG)
-                    .hover(|el| {
-                        el.bg(Theme::global().HEADER_BG)
-                            .border_color(Theme::global().PANEL_BORDER)
-                    })
+                    .min_h(px(34.))
+                    .px(px(10.))
+                    .py(px(7.))
+                    .rounded(px(9.))
+                    .hover(|el| el.bg(Theme::global().USER_BG))
                     .flex()
-                    .items_start()
-                    .gap_2()
+                    .items_center()
+                    .gap(px(10.))
+                    .when(!tip.is_empty(), |el| {
+                        el.tooltip(move |_, cx| {
+                            cx.new(|_| crate::panel::usage::MeterTooltip(tip.clone()))
+                                .into()
+                        })
+                    })
                     .child(
                         div()
                             .id(("todoist-complete", index))
-                            .mt(px(2.))
-                            .size(px(16.))
+                            .flex_none()
+                            .size(px(15.))
                             .rounded_full()
-                            .border_2()
+                            .border(px(1.5))
                             .border_color(priority)
                             .cursor_pointer()
+                            .hover(move |el| el.bg(priority.opacity(0.25)))
                             .when(busy, |el| el.bg(priority))
                             .on_mouse_down(
                                 gpui::MouseButton::Left,
@@ -1548,28 +1586,24 @@ impl Panel {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap(px(2.))
-                            .child(div().text_size(px(13.)).child(task.content))
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .text_size(px(10.))
-                                    .text_color(Theme::global().TEXT_DIM)
-                                    .when_some(task.due.map(|due| due.string), |el, due| {
-                                        el.child(format!("◷ {due}"))
-                                    })
-                                    .when_some(project_name, |el, name| {
-                                        el.child(format!("# {name}"))
-                                    })
-                                    .when(task.priority > 1, |el| {
-                                        el.child(format!("P{}", 5 - task.priority))
-                                    }),
-                            ),
-                    ),
+                            .text_size(px(13.))
+                            .line_height(px(18.))
+                            .text_color(Theme::global().TEXT)
+                            .child(task.content),
+                    )
+                    .when_some(task.due.map(|due| due.string), |el, due| {
+                        el.child(
+                            div()
+                                .flex_none()
+                                .text_size(px(11.))
+                                .text_color(Theme::global().TEXT_FAINT)
+                                .child(due),
+                        )
+                    }),
             );
+        }
+        if !tasks_empty {
+            list = list.child(rows);
         }
 
         div()
@@ -1584,41 +1618,53 @@ impl Panel {
                     .flex_none()
                     .px_4()
                     .pt_4()
-                    .pb_2()
+                    .pb_3()
                     .flex()
                     .items_center()
                     .justify_between()
                     .child(
                         div()
                             .flex()
-                            .flex_col()
+                            .items_baseline()
+                            .gap_2()
                             .child(
                                 div()
-                                    .text_size(px(18.))
+                                    .text_size(px(15.))
                                     .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(Theme::global().TEXT)
                                     .child("Todos"),
                             )
                             .child(
                                 div()
-                                    .text_size(px(10.))
-                                    .text_color(Theme::global().TEXT_DIM)
-                                    .child(format!(
-                                        "{} open · synced with Todoist",
-                                        state.tasks.len()
-                                    )),
+                                    .text_size(px(11.))
+                                    .text_color(Theme::global().TEXT_FAINT)
+                                    .child(format!("{} open", state.tasks.len())),
                             ),
                     )
                     .child(
                         div()
                             .id("todoist-refresh")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
+                            .h(px(26.))
+                            .px(px(10.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(8.))
                             .cursor_pointer()
-                            .text_size(px(11.))
+                            .text_size(px(12.))
                             .text_color(Theme::global().TEXT_DIM)
-                            .hover(|el| el.bg(Theme::global().HEADER_BG))
-                            .child("↻ refresh")
+                            .hover(|el| {
+                                el.bg(Theme::global().TOOL_BG)
+                                    .text_color(Theme::global().TEXT)
+                            })
+                            .tooltip(|_, cx| {
+                                cx.new(|_| {
+                                    crate::panel::usage::MeterTooltip(
+                                        "Sync with Todoist".into(),
+                                    )
+                                })
+                                .into()
+                            })
+                            .child("Refresh")
                             .on_mouse_down(
                                 gpui::MouseButton::Left,
                                 cx.listener(|panel, _, _, cx| panel.refresh_todoist(cx)),
@@ -1643,9 +1689,9 @@ impl Panel {
                 div()
                     .debug_selector(|| "todoist-composer".into())
                     .flex_none()
-                    .border_t_1()
-                    .border_color(Theme::global().PANEL_BORDER)
-                    .p_3()
+                    .px_3()
+                    .pt_1()
+                    .pb_3()
                     .child(self.input.clone()),
             )
             .into_any_element()
@@ -3386,6 +3432,7 @@ impl Panel {
         let host = runtime.host.borrow();
         let mut rows = Vec::new();
         let mut seen = HashSet::new();
+        let mut card_calls = HashSet::new();
         for mounted in host.inline_for(&self.session_id) {
             let id = mounted.instance.id.clone();
             if let Placement::Inline {
@@ -3397,6 +3444,7 @@ impl Panel {
                     .iter()
                     .any(|item| matches!(item, Item::Tool { call_id: c, .. } if c == call_id))
             {
+                card_calls.insert(call_id.clone());
                 continue;
             }
             let position = *self
@@ -3407,6 +3455,7 @@ impl Panel {
             rows.push((position, id));
         }
         drop(host);
+        self.run_card_calls = card_calls;
         self.applet_positions.retain(|id, _| seen.contains(id));
         rows.sort_by_key(|(position, _)| *position);
         // Any card change (mount, patch, close) can change row heights.
@@ -3450,6 +3499,18 @@ impl Panel {
             applet_rows_version: self.applet_rows_version,
             streaming,
             expansions,
+            runs: {
+                let mut sum = 0u64;
+                for entry in &self.expanded_runs {
+                    let mut state = std::collections::hash_map::DefaultHasher::new();
+                    entry.hash(&mut state);
+                    sum = sum.wrapping_add(state.finish());
+                }
+                (
+                    sum ^ self.expanded_runs.len() as u64,
+                    self.tool_runs_live(),
+                )
+            },
             display: crate::config::display(),
         };
         if self
@@ -3460,7 +3521,9 @@ impl Panel {
             if self
                 .transcript_derived
                 .as_ref()
-                .is_some_and(|derived| derived.key.display != key.display)
+                .is_some_and(|derived| {
+                    derived.key.display != key.display || derived.key.runs != key.runs
+                })
             {
                 self.transcript_measurements.dirty = true;
             }
@@ -3586,6 +3649,7 @@ impl Panel {
         for (ordinal, (_, instance)) in applets {
             rows.push(applet_row(ordinal, instance));
         }
+        let mut rows = self.fold_tool_runs(rows);
 
         for (index, item) in [
             (!self.streaming_reasoning.is_empty()
@@ -3705,6 +3769,7 @@ impl Panel {
                 crate::applet_surface::card(instance, true, &selection, window, cx)
                     .unwrap_or_else(|| div().into_any_element())
             }
+            Item::ToolRun(run) => self.render_tool_run(index, run, cx),
             Item::Stopped(notice) => self.render_stop_notice(index, notice, window, cx),
             Item::CacheMiss(notice) => self.render_cache_miss_notice(index, notice, window, cx),
             Item::ResponseStats(stats) => stats.render(index).into_any_element(),
@@ -4656,7 +4721,18 @@ impl Render for Panel {
             });
         }
         let row_count_changed = row_count != self.transcript_row_count;
-        if row_count_changed {
+        // Folding or unfolding a tool run changes rows mid-transcript. Splice
+        // exactly that span so rows above and below keep their measurements
+        // and the reader's anchor. Any remaining difference is the tail.
+        if let Some(previous) = self.spliced_rows.replace(rows.clone())
+            && !Arc::ptr_eq(&previous, &rows)
+            && let Some((range, count)) = run_summary::row_splice(&previous, &rows)
+            && range.end <= self.transcript_row_count
+        {
+            self.transcript_row_count = self.transcript_row_count - range.len() + count;
+            self.transcript_list.splice(range, count);
+        }
+        if row_count != self.transcript_row_count {
             if row_count > self.transcript_row_count {
                 self.transcript_list.splice(
                     self.transcript_row_count..self.transcript_row_count,
@@ -4766,7 +4842,11 @@ impl Render for Panel {
                         .gap_4()
                         .child(
                             div()
+                                .debug_selector(|| "fresh-session-heading".into())
+                                .font_family(Theme::global().FONT_UI)
+                                .font_weight(FontWeight::SEMIBOLD)
                                 .text_size(px(22.0))
+                                .line_height(px(28.0))
                                 .text_color(Theme::global().TEXT)
                                 .child("What would you like to work on?"),
                         )
@@ -4834,7 +4914,7 @@ impl Render for Panel {
                                             }
                                             TranscriptRowSource::Owned(item) => item,
                                         };
-                                        matches!(previous, Item::Tool { .. })
+                                        matches!(previous, Item::Tool { .. } | Item::ToolRun(_))
                                     });
                                 let display = crate::config::display();
                                 let top_padding = if display.compact_notifications
@@ -4843,7 +4923,9 @@ impl Render for Panel {
                                     2.0
                                 } else if matches!(item, Item::ResponseStats(_)) {
                                     2.0
-                                } else if matches!(item, Item::Tool { .. }) && follows_tool {
+                                } else if matches!(item, Item::Tool { .. } | Item::ToolRun(_))
+                                    && follows_tool
+                                {
                                     2.0
                                 } else {
                                     prompt::PROMPT_TOP_PADDING
@@ -5436,6 +5518,7 @@ fn role_of(item: &Item) -> Option<&'static str> {
         | Item::Stopped(_)
         | Item::CacheMiss(_)
         | Item::Applet(_)
+        | Item::ToolRun(_)
         | Item::Error(_) => None,
     }
 }
@@ -8423,6 +8506,8 @@ mod tests {
                     error: None,
                 })
                 .collect();
+            // A live turn keeps its tool rows expanded rather than folded.
+            panel.status = "running_tools".into();
             cx.notify();
         });
         vcx.run_until_parked();
@@ -8486,6 +8571,8 @@ mod tests {
                 done: true,
                 error: None,
             }));
+            // Expand the folded run so its rows paint individually.
+            panel.expanded_runs.insert("call-0".into());
             cx.notify();
         });
         vcx.run_until_parked();
@@ -9672,7 +9759,31 @@ fn demo_items(fixture: Option<&str>) -> Vec<Item> {
         return gmail_read_card::fixture_items();
     }
     if crate::harness::screenshot_mode() && fixture.as_deref() == Some("tool-icons") {
-        return [
+        // An earlier finished turn folds into one run summary. The survey's
+        // runs start expanded (see `Panel::new`) so every icon stays visible.
+        let earlier = [
+            ("read", "Read the parser"),
+            ("read", "Read the lexer"),
+            ("edit", "Tighten token spans"),
+            ("bash", "Run the parser tests"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (name, intent))| Item::Tool {
+            call_id: format!("earlier-{index}"),
+            name: name.into(),
+            input: serde_json::json!({ "intent": intent }).to_string(),
+            output: "Done".into(),
+            done: true,
+            error: None,
+        });
+        let mut items = vec![Item::User("Tidy the parser spans".into())];
+        items.extend(earlier);
+        items.push(Item::Assistant(
+            "Token spans now cover the whole lexeme, and the parser tests pass.".into(),
+        ));
+        items.push(Item::User("Survey the tool surface".into()));
+        items.extend([
             "read",
             "write",
             "edit",
@@ -9702,8 +9813,8 @@ fn demo_items(fixture: Option<&str>) -> Vec<Item> {
             output: "Done".into(),
             done: index != 5,
             error: (index == 11).then(|| "Example error".into()),
-        })
-        .collect();
+        }));
+        return items;
     }
     if crate::harness::screenshot_mode() && fixture.as_deref() == Some("tool-streaming") {
         return tool_streaming::fixture_items();

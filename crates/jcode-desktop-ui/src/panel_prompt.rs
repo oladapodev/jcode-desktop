@@ -5,6 +5,9 @@ use std::{cell::Cell, rc::Rc};
 // the card top, not the row top and not the disappearance of its bottom.
 pub(super) const PROMPT_TOP_PADDING: f32 = 10.;
 const COLLAPSED_PROMPT_LINES: usize = 6;
+/// Bubble padding around the prompt text (prototype UserMsg: 10px x 14px).
+const PROMPT_PAD_X: f32 = 14.;
+const PROMPT_PAD_Y: f32 = 10.;
 const COLLAPSED_PROMPT_MAX_HEIGHT: f32 = 140.;
 
 /// Bound both long pasted paragraphs and newline-heavy snippets. Return a
@@ -204,8 +207,13 @@ impl Panel {
             .flex_shrink_1()
             .flex()
             .flex_col()
-            .px_2()
-            .py_1()
+            // One calm filled bubble. The markdown's stepped line fill uses the
+            // same colour and sits inside this padding, so it blends in.
+            .px(px(PROMPT_PAD_X))
+            .py(px(PROMPT_PAD_Y))
+            .rounded(px(16.))
+            .bg(background)
+            .text_size(px(13.5))
             .text_color(Theme::global().TEXT_USER)
             .child(
                 div()
@@ -315,16 +323,19 @@ impl Panel {
                     div()
                         .debug_selector(move || format!("prompt-number-{index}-{number}").into())
                         .flex_none()
-                        .mt(px(4.))
+                        .mt(px(PROMPT_PAD_Y))
                         .w(px(number_width))
                         .h(px(20.))
                         .rounded_full()
-                        .bg(background)
+                        .bg(gpui::Rgba {
+                            a: background.a * 0.5,
+                            ..background
+                        })
                         .font_family(Theme::global().FONT_UI)
                         .text_center()
-                        .text_size(px(10.))
+                        .text_size(px(10.5))
                         .line_height(px(20.))
-                        .text_color(Theme::global().TEXT_DIM)
+                        .text_color(Theme::global().TEXT_FAINT)
                         .child(number.to_string()),
                 )
             })
@@ -642,7 +653,7 @@ mod tests {
             px(6.),
             "badge sits left of card"
         );
-        assert_eq!(number.top(), card.top() + px(4.));
+        assert_eq!(number.top(), card.top() + px(PROMPT_PAD_Y));
         assert_eq!(number.size, gpui::size(px(20.), px(20.)));
         assert!(number.left() >= vcx.debug_bounds("transcript").unwrap().left());
         let content = vcx.debug_bounds("prompt-content-0").unwrap();
@@ -652,12 +663,12 @@ mod tests {
         );
         assert_eq!(
             card.size.height,
-            content.size.height + px(8.),
+            content.size.height + px(2. * PROMPT_PAD_Y),
             "number adds no footer height"
         );
         assert_eq!(
             card.size.width,
-            content.size.width + px(16.),
+            content.size.width + px(2. * PROMPT_PAD_X),
             "number does not change card padding"
         );
     }
@@ -1015,13 +1026,13 @@ mod tests {
                         "multi-digit number never overlaps markdown"
                     );
                     assert_eq!(number.right() + px(6.), card.left());
-                    assert_eq!(number.top(), card.top() + px(4.));
+                    assert_eq!(number.top(), card.top() + px(PROMPT_PAD_Y));
                     assert_eq!(number.size.width, px(if count == 99 { 22. } else { 29. }));
                     assert!(number.left() >= vcx.debug_bounds("transcript").unwrap().left());
-                    assert_eq!(card.size.width, content.size.width + px(16.));
+                    assert_eq!(card.size.width, content.size.width + px(2. * PROMPT_PAD_X));
                     assert_eq!(
                         card.size.height,
-                        content.size.height + px(8.),
+                        content.size.height + px(2. * PROMPT_PAD_Y),
                         "no numbered footer"
                     );
                     assert!(card.right() <= vcx.debug_bounds("transcript").unwrap().right());
