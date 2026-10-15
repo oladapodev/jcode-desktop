@@ -639,6 +639,16 @@ fn main() {
         }
     });
     app.run(move |cx: &mut App| {
+        // Bundled interface font. Registered by the host so hot-reloaded UI code
+        // can rely on "Inter" being present on every machine.
+        let inter: Vec<std::borrow::Cow<'static, [u8]>> = vec![
+            std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/inter/Inter-Regular.ttf")),
+            std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/inter/Inter-Medium.ttf")),
+            std::borrow::Cow::Borrowed(include_bytes!("../assets/fonts/inter/Inter-SemiBold.ttf")),
+        ];
+        if let Err(error) = cx.text_system().add_fonts(inter) {
+            eprintln!("failed to register bundled Inter font: {error:#}");
+        }
         let quit_socket = instance_socket.clone();
         cx.on_app_quit(move |_| {
             quit_socket.cleanup();

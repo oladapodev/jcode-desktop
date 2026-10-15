@@ -54,7 +54,7 @@ pub(crate) fn render_badge_with_label(
         .child(
             div()
                 .debug_selector(|| "tool-name".into())
-                .font_family(theme.FONT_MONO)
+                .font_family(theme.FONT_UI)
                 .font_weight(gpui::FontWeight::NORMAL)
                 .text_size(px(11.0))
                 .line_height(px(14.0))

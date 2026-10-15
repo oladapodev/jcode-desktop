@@ -1,6 +1,6 @@
 //! Coordinated palettes. Every semantic role is derived here so new themes do
 //! not accidentally inherit warm-neutral surfaces or unreadable light accents.
-use super::{Theme, platform_font, rgb_c, rgba_c};
+use super::{Theme, platform_font, rgb_c, rgba_c, ui_font};
 
 pub(super) struct Palette {
     bg: u32,
@@ -82,8 +82,8 @@ impl Palette {
             MINIMAP_PANEL: rgb_c(self.border),
             MINIMAP_PANEL_BUSY: rgb_c(self.accent),
             MINIMAP_BG: alpha(self.panel, 0xe6),
-            FONT_UI: platform_font(),
-            FONT_AI: platform_font(),
+            FONT_UI: ui_font(),
+            FONT_AI: ui_font(),
             FONT_MONO: platform_font(),
         }
     }
@@ -510,4 +510,126 @@ pub(super) fn glass() -> Theme {
     theme.SELECTION = rgba_c(0x3a83f773);
     theme.CURSOR = theme.HEADING;
     theme
+}
+
+/// Studio dark (redesign default): warm graphite, flat surfaces, neutral chrome.
+/// Colour is reserved for state: brass = working, ember = needs you,
+/// sage = done, rose = failed. Everything else stays neutral.
+pub(super) fn studio_dark() -> Theme {
+    let mut theme = Palette {
+        bg: 0x12100e,
+        panel: 0x181613,
+        raised: 0x242019,
+        border: 0x2a2621,
+        text: 0xefe7db,
+        muted: 0xa69c8f,
+        accent: 0xefe7db,
+        secondary: 0xefe7db,
+        keyword: 0xd79a6b,
+        string: 0xa8c48a,
+        number: 0xd9a0c4,
+        error: 0xec8579,
+        ok: 0x9cc49a,
+        warn: 0xef9f5f,
+    }
+    .theme();
+    let alpha = |color: u32, opacity: u32| rgba_c((color << 8) | opacity);
+    theme.PANEL_BORDER = rgb_c(0x26221d);
+    theme.PANEL_BORDER_FOCUS = rgb_c(0x3b352e);
+    theme.PANEL_BORDER_IDLE = rgba_c(0);
+    theme.ACCENT = rgb_c(0xe0b46c); // brass: live work and the primary action only
+    theme.ACCENT_DIM = alpha(0xe0b46c, 0x1c);
+    theme.ACCENT_MUTED = rgb_c(0xa69c8f);
+    theme.USER_ACCENT = rgb_c(0xa69c8f);
+    theme.AI_ACCENT = rgb_c(0xa69c8f);
+    theme.USER_BG = rgb_c(0x26221d);
+    theme.PROMPT_TINT_STRENGTH = 0.0;
+    theme.TEXT_USER = rgb_c(0xefe7db);
+    theme.TEXT_FAINT = rgb_c(0x8d8377);
+    theme.HEADING = rgb_c(0xf5eee4);
+    theme.INPUT_BG = rgb_c(0x26221d);
+    theme.INPUT_BORDER = rgb_c(0x2d2924);
+    theme.TOOL_BG = rgb_c(0x181613);
+    theme.TOOL_BORDER = rgb_c(0x26221d);
+    theme.TOOL_TEXT = rgb_c(0xa69c8f);
+    theme.REASONING = rgb_c(0xa69c8f);
+    theme.REASONING_BG = alpha(0xefe7db, 0x04);
+    theme.CODE_BG = rgb_c(0x0e0c0b);
+    theme.CODE_HEADER_BG = rgb_c(0x0e0c0b);
+    theme.CODE_BORDER = rgb_c(0x0e0c0b);
+    theme.CODE_GUTTER = rgb_c(0x6d655b);
+    theme.INLINE_CODE_BG = rgb_c(0x26221d);
+    theme.QUOTE_BG = alpha(0xefe7db, 0x06);
+    theme.TABLE_STRIPE = alpha(0xefe7db, 0x05);
+    theme.ERROR_BG = alpha(0xec8579, 0x12);
+    theme.LINK = rgb_c(0xe6c785);
+    theme.SELECTION = alpha(0xe0b46c, 0x40);
+    theme.CURSOR = rgb_c(0xe0b46c);
+    theme.MINIMAP_BG = rgba_c(0x181613e6);
+    theme.MINIMAP_VIEWPORT = alpha(0xe0b46c, 0x55);
+    theme
+}
+
+/// Studio light: the same structure on warm paper.
+pub(super) fn studio_light() -> Theme {
+    let mut theme = Palette {
+        bg: 0xf6f3ee,
+        panel: 0xfffdf9,
+        raised: 0xefebe4,
+        border: 0xe3ddd2,
+        text: 0x221d17,
+        muted: 0x6b6156,
+        accent: 0x221d17,
+        secondary: 0x221d17,
+        keyword: 0xa3401f,
+        string: 0x4f7a2a,
+        number: 0x8a3f8a,
+        error: 0xb34536,
+        ok: 0x457a3c,
+        warn: 0xa35a17,
+    }
+    .theme();
+    let alpha = |color: u32, opacity: u32| rgba_c((color << 8) | opacity);
+    theme.PANEL_BORDER = rgb_c(0xe8e2d8);
+    theme.PANEL_BORDER_FOCUS = rgb_c(0xd2cabd);
+    theme.ACCENT = rgb_c(0x9a5f1a);
+    theme.ACCENT_DIM = alpha(0x9a5f1a, 0x1a);
+    theme.ACCENT_MUTED = rgb_c(0x6b6156);
+    theme.USER_ACCENT = rgb_c(0x6b6156);
+    theme.AI_ACCENT = rgb_c(0x6b6156);
+    theme.USER_BG = rgb_c(0xefebe4);
+    theme.PROMPT_TINT_STRENGTH = 0.0;
+    theme.TEXT_FAINT = rgb_c(0x7d7366);
+    theme.HEADING = rgb_c(0x16120d);
+    theme.INPUT_BG = rgb_c(0xefebe4);
+    theme.INPUT_BORDER = rgb_c(0xe3ddd2);
+    theme.TOOL_BG = rgb_c(0xfffdf9);
+    theme.TOOL_BORDER = rgb_c(0xe8e2d8);
+    theme.CODE_BG = rgb_c(0xf1ece4);
+    theme.CODE_HEADER_BG = rgb_c(0xf1ece4);
+    theme.CODE_BORDER = rgb_c(0xf1ece4);
+    theme.INLINE_CODE_BG = rgb_c(0xebe5dc);
+    theme.ERROR_BG = alpha(0xb34536, 0x10);
+    theme.LINK = rgb_c(0x7a4e0f);
+    theme.SELECTION = alpha(0x9a5f1a, 0x33);
+    theme.CURSOR = rgb_c(0x9a5f1a);
+    theme
+}
+
+/// Prototype syntax palette (warmer and calmer than VS Code defaults).
+pub(super) fn apply_studio_code_colors(theme: &mut Theme, light: bool) {
+    let c = |dark: u32, light_c: u32| rgb_c(if light { light_c } else { dark });
+    theme.CODE_TEXT = c(0xefe7db, 0x221d17);
+    theme.CODE_KEYWORD = c(0xd79a6b, 0xa3401f);
+    theme.CODE_CONTROL = c(0xd79a6b, 0xa3401f);
+    theme.CODE_FUNCTION = c(0xe6c785, 0x7a4e0f);
+    theme.CODE_TYPE = c(0x9cc4b8, 0x2d6a63);
+    theme.CODE_STRING = c(0xa8c48a, 0x3f6b1f);
+    theme.CODE_NUMBER = c(0xd9a0c4, 0x8a3f8a);
+    theme.CODE_CONSTANT = c(0xd9a0c4, 0x8a3f8a);
+    theme.CODE_COMMENT = c(0x8a8072, 0x6f6558);
+    theme.CODE_VARIABLE = c(0xefe7db, 0x221d17);
+    theme.CODE_ATTRIBUTE = c(0xc9b8a2, 0x5c4a33);
+    theme.CODE_TAG = c(0xd79a6b, 0xa3401f);
+    theme.CODE_PUNCT = c(0x8e8477, 0x6a5f52);
 }

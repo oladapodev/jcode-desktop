@@ -287,8 +287,8 @@ impl Theme {
             MINIMAP_PANEL: rgb_c(0x554c43),
             MINIMAP_PANEL_BUSY: rgb_c(0x786a5d),
             MINIMAP_BG: rgba_c(0x302b27e6),
-            FONT_UI: platform_font(),
-            FONT_AI: platform_font(),
+            FONT_UI: ui_font(),
+            FONT_AI: ui_font(),
             FONT_MONO: platform_font(),
         }
     }
@@ -360,6 +360,9 @@ impl Theme {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ThemePreset {
+    #[default]
+    StudioDark,
+    StudioLight,
     WarmNeutral,
     WarmStudio,
     NeutralDark,
@@ -376,13 +379,12 @@ pub enum ThemePreset {
     Silver,
     LightNeutral,
     DarkNeutral,
-    #[default]
     PureBlack,
     Glass,
 }
 
 impl ThemePreset {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 20] = [
         Self::WarmNeutral,
         Self::WarmStudio,
         Self::NeutralDark,
@@ -401,9 +403,13 @@ impl ThemePreset {
         Self::DarkNeutral,
         Self::PureBlack,
         Self::Glass,
+        Self::StudioDark,
+        Self::StudioLight,
     ];
     pub const fn id(self) -> &'static str {
         match self {
+            Self::StudioDark => "studio-dark",
+            Self::StudioLight => "studio-light",
             Self::WarmNeutral => "warm-neutral",
             Self::WarmStudio => "warm-studio",
             Self::NeutralDark => "neutral-dark",
@@ -426,6 +432,8 @@ impl ThemePreset {
     }
     pub const fn label(self) -> &'static str {
         match self {
+            Self::StudioDark => "Studio dark",
+            Self::StudioLight => "Studio light",
             Self::WarmNeutral => "Warm neutral",
             Self::WarmStudio => "Warm studio",
             Self::NeutralDark => "Neutral dark",
@@ -448,6 +456,8 @@ impl ThemePreset {
     }
     const fn index(self) -> usize {
         match self {
+            Self::StudioDark => 18,
+            Self::StudioLight => 19,
             Self::WarmNeutral => 0,
             Self::WarmStudio => 1,
             Self::NeutralDark => 2,
@@ -485,7 +495,7 @@ impl ThemePreset {
     }
 }
 
-static ACTIVE_THEME: AtomicUsize = AtomicUsize::new(ThemePreset::PureBlack.index());
+static ACTIVE_THEME: AtomicUsize = AtomicUsize::new(ThemePreset::StudioDark.index());
 
 /// The active theme is process-global. Every unit test that selects a theme
 /// must hold this for its whole body, or parallel tests observe its palette.
@@ -667,7 +677,7 @@ fn raw_themes() -> [Theme; ThemePreset::ALL.len()] {
     light.LINK = rgb_c(0x655346);
     light.MINIMAP_BG = rgba_c(0xf8f7f4e6);
     light.MINIMAP_PANEL = rgb_c(0xaaa39a);
-    [
+    let mut themes = [
         warm,
         studio,
         dark,
@@ -686,11 +696,16 @@ fn raw_themes() -> [Theme; ThemePreset::ALL.len()] {
         palettes::dark_neutral(),
         palettes::pure_black(),
         palettes::glass(),
-    ]
-    .map(|mut theme| {
-        palettes::apply_code_colors(&mut theme);
-        theme
-    })
+        palettes::studio_dark(),
+        palettes::studio_light(),
+    ];
+    for theme in &mut themes[..18] {
+        palettes::apply_code_colors(theme);
+    }
+    // Studio palettes carry their own tuned syntax colours.
+    palettes::apply_studio_code_colors(&mut themes[18], false);
+    palettes::apply_studio_code_colors(&mut themes[19], true);
+    themes
 }
 
 fn themes() -> &'static [Theme; ThemePreset::ALL.len()] {
@@ -703,6 +718,12 @@ fn themes() -> &'static [Theme; ThemePreset::ALL.len()] {
         );
         result
     })
+}
+
+/// Interface and prose font. Inter is bundled and registered by the host at
+/// startup, so it is present on every platform. Code keeps the mono font.
+pub(crate) const fn ui_font() -> &'static str {
+    "Inter"
 }
 
 #[cfg(target_os = "macos")]
@@ -774,8 +795,21 @@ mod tests {
     }
 
     #[test]
+    fn studio_syntax_colors_stay_readable() {
+        for preset in [ThemePreset::StudioDark, ThemePreset::StudioLight] {
+            let theme = &raw_themes()[preset.index()];
+            for color in syntax_colors(theme) {
+                assert!(contrast(color, theme.CODE_BG) >= 4.5, "{preset:?} {}", contrast(color, theme.CODE_BG));
+            }
+        }
+    }
+
+    #[test]
     fn vscode_syntax_colors_match_every_raw_preset_and_remain_readable() {
         for (preset, theme) in ThemePreset::ALL.into_iter().zip(raw_themes()) {
+            if matches!(preset, ThemePreset::StudioDark | ThemePreset::StudioLight) {
+                continue; // tuned palette, checked above
+            }
             let light = luminance(theme.CODE_BG) > 0.179;
             let expected = if light {
                 [
@@ -1109,9 +1143,9 @@ mod tests {
             current = current.next();
         }
         assert_eq!(current, ThemePreset::WarmNeutral);
-        assert_eq!(ThemePreset::default(), ThemePreset::PureBlack);
-        assert_eq!(ThemePreset::from_id("unknown"), ThemePreset::PureBlack);
-        assert_eq!(ThemePreset::from_id(""), ThemePreset::PureBlack);
+        assert_eq!(ThemePreset::default(), ThemePreset::StudioDark);
+        assert_eq!(ThemePreset::from_id("unknown"), ThemePreset::StudioDark);
+        assert_eq!(ThemePreset::from_id(""), ThemePreset::StudioDark);
     }
 
     #[test]

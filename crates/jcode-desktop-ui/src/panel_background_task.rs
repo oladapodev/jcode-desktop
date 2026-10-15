@@ -183,7 +183,7 @@ fn completed_card(
         .child(
             div()
                 .text_size(px(10.0))
-                .font_family(theme.FONT_MONO)
+                .font_family(theme.FONT_UI)
                 .text_color(theme.TEXT_FAINT)
                 .child(format!("Background task · {task_id}")),
         )

@@ -94,7 +94,7 @@ impl Panel {
                 .gap_1p5()
                 .rounded_full()
                 .text_size(px(10.5))
-                .font_family(theme.FONT_MONO)
+                .font_family(theme.FONT_UI)
                 .whitespace_nowrap()
                 .cursor_pointer()
                 .map(|el| {
@@ -229,7 +229,7 @@ impl Panel {
                         .child(
                             div()
                                 .flex_none()
-                                .font_family(theme.FONT_MONO)
+                                .font_family(theme.FONT_UI)
                                 .text_size(px(10.5))
                                 .text_color(theme.TEXT_DIM)
                                 .child(format!("{done}/{}", STAGES.len())),
@@ -315,7 +315,7 @@ fn stage_row(
         .child(
             div()
                 .flex_none()
-                .font_family(theme.FONT_MONO)
+                .font_family(theme.FONT_UI)
                 .text_size(px(10.))
                 .text_color(color)
                 .child(match state {

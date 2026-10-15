@@ -196,7 +196,7 @@ fn render_shortcut_keys(shortcut: &str, icons: bool) -> gpui::AnyElement {
                                     .border_1()
                                     .border_b_2()
                                     .border_color(theme.PANEL_BORDER)
-                                    .font_family(theme.FONT_MONO)
+                                    .font_family(theme.FONT_UI)
                                     .text_size(px(11.0))
                                     .text_color(theme.TEXT)
                                     .child(match icons.then(|| showcase_key_icon(key)).flatten() {
@@ -355,7 +355,7 @@ impl Workspace {
                 div()
                     .debug_selector(|| "coach-keys".into())
                     .flex_none()
-                    .font_family(theme.FONT_MONO)
+                    .font_family(theme.FONT_UI)
                     .text_size(px(10.0))
                     .text_color(theme.TEXT)
                     .child(chip_keys(hint.keys)),

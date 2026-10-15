@@ -5307,7 +5307,7 @@ impl Render for Panel {
                                         .border_1()
                                         .border_color(Theme::global().PANEL_BORDER)
                                         .text_size(px(10.5))
-                                        .font_family(Theme::global().FONT_MONO)
+                                        .font_family(Theme::global().FONT_UI)
                                         .text_color(Theme::global().TEXT_DIM)
                                         .cursor_pointer()
                                         .hover(|el| el.text_color(Theme::global().TEXT))
@@ -6304,7 +6304,7 @@ fn render_todo_card_with_style(
                         div()
                             .debug_selector(|| "pinned-todo-count".into())
                             .flex_none()
-                            .font_family(Theme::global().FONT_MONO)
+                            .font_family(Theme::global().FONT_UI)
                             .text_size(px(10.5))
                             .text_color(Theme::global().TEXT_DIM)
                             .child({

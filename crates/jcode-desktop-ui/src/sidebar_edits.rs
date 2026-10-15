@@ -60,7 +60,7 @@ pub(super) fn render(
         .flex()
         .items_center()
         .gap_1()
-        .font_family(Theme::global().FONT_MONO)
+        .font_family(Theme::global().FONT_UI)
         .text_size(px(9.))
         .tooltip(move |_, cx| cx.new(|_| EditTooltip(detail.clone())).into())
         .child(

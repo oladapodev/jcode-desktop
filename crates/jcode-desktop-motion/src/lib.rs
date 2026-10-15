@@ -131,7 +131,7 @@ pub const POLICIES: [Policy; 17] = [
     Policy {
         transition: Transition::PromptDelivery,
         motion: Motion::Animate,
-        duration: Duration::from_millis(420),
+        duration: Duration::from_millis(280),
     },
     Policy {
         transition: Transition::ToolArrival,
@@ -231,7 +231,8 @@ pub fn arrival_motion(started_at: Instant, now: Instant, duration: Duration) -> 
     }
     let progress = elapsed.as_secs_f32() / duration.as_secs_f32();
     let eased = ease_out_cubic(progress);
-    (6.0 * (1.0 - eased), 0.55 + 0.45 * eased, true)
+    // Calm arrival: a short 3px settle, never starting below 70% opacity.
+    (3.0 * (1.0 - eased), 0.7 + 0.3 * eased, true)
 }
 
 /// Entrance-only motion for live menus. Filtering and selection do not restart
@@ -322,7 +323,7 @@ mod tests {
     fn arrival_motion_settles_at_full_opacity() {
         let start = Instant::now();
         let duration = policy(Transition::ToolArrival, false).duration;
-        assert_eq!(arrival_motion(start, start, duration), (6.0, 0.55, true));
+        assert_eq!(arrival_motion(start, start, duration), (3.0, 0.7, true));
         assert_eq!(
             arrival_motion(start, start + duration, duration),
             (0.0, 1.0, false)

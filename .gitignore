@@ -2,3 +2,4 @@
 **/target/
 /target-*/
 __pycache__/
+target/vm/

@@ -211,7 +211,7 @@ impl Panel {
                 .debug_selector(|| "voice-costs".into())
                 .flex_shrink_0()
                 .truncate()
-                .font_family(theme.FONT_MONO)
+                .font_family(theme.FONT_UI)
                 .text_size(px(10.))
                 .text_color(theme.TEXT_DIM)
                 .tooltip(move |_, cx| cx.new(|_| VoiceTooltip(tooltip.clone())).into())
@@ -267,7 +267,7 @@ impl Panel {
                         .size(px(18.))
                         .rounded_full()
                         .bg(background)
-                        .font_family(theme.FONT_MONO)
+                        .font_family(theme.FONT_UI)
                         .text_center()
                         .text_size(px(10.))
                         .line_height(px(18.))
@@ -297,7 +297,7 @@ impl Panel {
                         .child(
                             div()
                                 .flex_shrink_0()
-                                .font_family(theme.FONT_MONO)
+                                .font_family(theme.FONT_UI)
                                 .text_size(px(10.))
                                 .text_color(if pill.winner {
                                     theme.ACCENT

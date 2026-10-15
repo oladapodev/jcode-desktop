@@ -149,8 +149,8 @@ def main():
     parser.add_argument("--focus-panel", type=int,
                         help="click this zero-based panel through X11 before capture")
     parser.add_argument("--layout-mode", choices=("normal", "folder_tabs"), default="folder_tabs")
-    parser.add_argument("--theme", default="warm-neutral", choices=(
-        "warm-neutral", "warm-studio", "neutral-dark", "neutral-light",
+    parser.add_argument("--theme", default="studio-dark", choices=(
+        "studio-dark", "studio-light", "warm-neutral", "warm-studio", "neutral-dark", "neutral-light",
         "midnight", "ocean", "forest", "plum", "rose-dawn", "parchment",
         "graphite", "slate", "paper", "silver", "light-neutral", "chatgpt-light", "dark-neutral", "pure-black", "glass",
     ), help="render a built-in palette with isolated settings")

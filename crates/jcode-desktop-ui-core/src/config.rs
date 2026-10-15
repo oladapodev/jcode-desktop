@@ -1047,8 +1047,8 @@ mod tests {
     }
 
     #[test]
-    fn theme_defaults_to_pure_black_and_preserves_explicit_preferences() {
-        assert_eq!(DesktopConfig::default().appearance.theme, "pure-black");
+    fn theme_defaults_to_studio_dark_and_preserves_explicit_preferences() {
+        assert_eq!(DesktopConfig::default().appearance.theme, "studio-dark");
         for standalone in [false, true] {
             let section = if standalone {
                 "appearance"
@@ -1058,7 +1058,7 @@ mod tests {
             for text in [String::new(), format!("[{section}]\ntext_scale = 1.25\n")] {
                 assert_eq!(
                     parse(&text, standalone).unwrap().appearance.theme,
-                    "pure-black"
+                    "studio-dark"
                 );
             }
             for preset in crate::theme::ThemePreset::ALL {

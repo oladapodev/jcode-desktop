@@ -203,7 +203,7 @@ impl ResponseStats {
             .gap_y_1()
             .px_1()
             .py_1()
-            .font_family(Theme::global().FONT_MONO)
+            .font_family(Theme::global().FONT_UI)
             .text_size(px(10.))
             .text_color(Theme::global().TEXT_DIM)
             .tooltip(move |_, cx| cx.new(|_| StatsTooltip(detail.clone())).into())

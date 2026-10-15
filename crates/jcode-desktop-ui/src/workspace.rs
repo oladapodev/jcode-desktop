@@ -5319,7 +5319,7 @@ impl Workspace {
                 div()
                     .px_3()
                     .py_2()
-                    .font_family(Theme::global().FONT_MONO)
+                    .font_family(Theme::global().FONT_UI)
                     .text_size(px(10.0))
                     .text_color(Theme::global().TEXT_DIM)
                     .overflow_hidden()
@@ -6756,7 +6756,7 @@ impl Workspace {
                 Theme::global().PANEL_BORDER
             })
             .text_size(px(10.5))
-            .font_family(Theme::global().FONT_MONO)
+            .font_family(Theme::global().FONT_UI)
             .text_color(ink)
             .occlude()
             .child(dot)
@@ -7764,7 +7764,7 @@ impl Workspace {
                     .w(px(150.0))
                     .flex_none()
                     .text_size(px(12.0))
-                    .font_family(Theme::global().FONT_MONO)
+                    .font_family(Theme::global().FONT_UI)
                     .text_color(if known {
                         Theme::global().TEXT_DIM
                     } else {
@@ -15271,6 +15271,8 @@ mod tests {
             "theme-preset-15",
             "theme-preset-16",
             "theme-preset-17",
+            "theme-preset-18",
+            "theme-preset-19",
         ];
         assert_eq!(selectors.len(), ThemePreset::ALL.len());
         for (selector, preset) in selectors.into_iter().zip(ThemePreset::ALL) {

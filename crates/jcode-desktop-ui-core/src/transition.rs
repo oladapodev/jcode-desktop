@@ -65,7 +65,7 @@ mod tests {
     fn arrival_motion_settles_at_full_opacity() {
         let start = Instant::now();
         let duration = policy(Transition::ToolArrival).duration;
-        assert_eq!(arrival_motion(start, start, duration), (6.0, 0.55, true));
+        assert_eq!(arrival_motion(start, start, duration), (3.0, 0.7, true));
         assert_eq!(
             arrival_motion(start, start + duration, duration),
             (0.0, 1.0, false)

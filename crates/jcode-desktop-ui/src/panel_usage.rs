@@ -106,7 +106,7 @@ fn limit_row(index: usize, limit: &UsageLimit, theme: &Theme) -> gpui::AnyElemen
                         .truncate()
                         .child(limit.name.clone()),
                 )
-                .child(div().flex_none().font_family(theme.FONT_MONO).child(value)),
+                .child(div().flex_none().font_family(theme.FONT_UI).child(value)),
         )
         .children(used.map(|used| {
             div()
@@ -372,7 +372,7 @@ impl Panel {
                 .h(px(22.))
                 .px_1()
                 .text_size(px(10.5))
-                .font_family(theme.FONT_MONO)
+                .font_family(theme.FONT_UI)
                 .text_color(theme.TEXT_DIM)
                 .tooltip(move |_, cx| cx.new(|_| MeterTooltip(detail.clone())).into())
                 .child(context_ring(percent))

@@ -320,7 +320,7 @@ impl Panel {
                         .h(px(20.))
                         .rounded_full()
                         .bg(background)
-                        .font_family(Theme::global().FONT_MONO)
+                        .font_family(Theme::global().FONT_UI)
                         .text_center()
                         .text_size(px(10.))
                         .line_height(px(20.))

@@ -962,7 +962,7 @@ impl Workspace {
                             .child(
                                 div()
                                     .debug_selector(|| "fps-counter".into())
-                                    .font_family(Theme::global().FONT_MONO)
+                                    .font_family(Theme::global().FONT_UI)
                                     .text_size(px(10.0))
                                     .text_color(Theme::global().TEXT_DIM)
                                     .child(fps),
