@@ -47,7 +47,12 @@ fn kind(name: &str) -> Kind {
         "read" => Kind::Read,
         "write" | "edit" | "multiedit" | "replace" | "patch" | "apply_patch" => Kind::Edit,
         "bash" => Kind::Command,
-        "agentgrep" | "grep" | "glob" | "find" | "ls" | "conversation_search"
+        "agentgrep"
+        | "grep"
+        | "glob"
+        | "find"
+        | "ls"
+        | "conversation_search"
         | "session_search" => Kind::Search,
         "websearch" | "webfetch" | "browser" => Kind::Web,
         _ => Kind::Other,
@@ -138,7 +143,9 @@ pub(super) fn row_splice(
     }
     // A run's members follow its summary row, so toggling it changes the
     // rows right after an unchanged summary.
-    let touches_run = prefix.checked_sub(1).is_some_and(|row| is_summary_row(&new[row]))
+    let touches_run = prefix
+        .checked_sub(1)
+        .is_some_and(|row| is_summary_row(&new[row]))
         || old[old_range.clone()]
             .iter()
             .chain(&new[new_range.clone()])
@@ -186,7 +193,10 @@ impl Panel {
     /// Replace each run of `MIN_RUN` or more finished tool rows with a
     /// summary row. Expanded runs keep every member after the summary.
     /// Collapsed runs keep their failed members.
-    pub(super) fn fold_tool_runs(&self, rows: Vec<TranscriptRenderRow>) -> Vec<TranscriptRenderRow> {
+    pub(super) fn fold_tool_runs(
+        &self,
+        rows: Vec<TranscriptRenderRow>,
+    ) -> Vec<TranscriptRenderRow> {
         let live = self.tool_runs_live();
         let turn_start = self
             .items
@@ -300,61 +310,68 @@ impl Panel {
                     .child(crate::tool_icon::render_sized(name, 11., theme.TEXT_DIM))
             }));
         let label = summary_label(&run.names);
-        div().flex().flex_row().child(
-            div()
-                .id(("tool-run", index))
-                .debug_selector(|| "tool-run-summary".into())
-                .group(group.clone())
-                .flex_none()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(8.))
-                .ml(px(-2.))
-                .px(px(4.))
-                .py(px(3.))
-                .rounded(px(8.))
-                .cursor_pointer()
-                .text_size(px(13.))
-                .line_height(px(18.))
-                .text_color(theme.TEXT_FAINT)
-                .hover(move |style| style.text_color(theme.TEXT_DIM))
-                .on_click(cx.listener(move |this, _event, _window, cx| {
-                    cx.stop_propagation();
-                    this.toggle_tool_run(&id, cx);
-                }))
-                .child(icons)
-                .child(
-                    div()
-                        .debug_selector(|| "tool-run-label".into())
-                        .whitespace_nowrap()
-                        .child(label),
-                )
-                .when(run.failed > 0, |el| {
-                    el.child(
+        div()
+            .flex()
+            .flex_row()
+            .child(
+                div()
+                    .id(("tool-run", index))
+                    .debug_selector(|| "tool-run-summary".into())
+                    .group(group.clone())
+                    .flex_none()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(8.))
+                    .ml(px(-2.))
+                    .px(px(4.))
+                    .py(px(3.))
+                    .rounded(px(8.))
+                    .cursor_pointer()
+                    .text_size(px(13.))
+                    .line_height(px(18.))
+                    .text_color(theme.TEXT_FAINT)
+                    .hover(move |style| style.text_color(theme.TEXT_DIM))
+                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                        cx.stop_propagation();
+                        this.toggle_tool_run(&id, cx);
+                    }))
+                    .child(icons)
+                    .child(
                         div()
-                            .debug_selector(|| "tool-run-failed".into())
+                            .debug_selector(|| "tool-run-label".into())
                             .whitespace_nowrap()
-                            .text_color(theme.ERROR)
-                            .child(format!("{} failed", run.failed)),
+                            .child(label),
                     )
-                })
-                .child(
-                    div()
-                        .debug_selector(|| "tool-run-chevron".into())
-                        .flex_none()
-                        .size(px(13.))
-                        .opacity(if expanded { 1. } else { 0. })
-                        .group_hover(group, |el| el.opacity(1.))
-                        .child(
-                            gpui::svg()
-                                .data(if expanded { CHEVRON_DOWN } else { CHEVRON_RIGHT })
-                                .size(px(13.))
-                                .text_color(theme.TEXT_FAINT),
-                        ),
-                ),
-        )
-        .into_any_element()
+                    .when(run.failed > 0, |el| {
+                        el.child(
+                            div()
+                                .debug_selector(|| "tool-run-failed".into())
+                                .whitespace_nowrap()
+                                .text_color(theme.ERROR)
+                                .child(format!("{} failed", run.failed)),
+                        )
+                    })
+                    .child(
+                        div()
+                            .debug_selector(|| "tool-run-chevron".into())
+                            .flex_none()
+                            .size(px(13.))
+                            .opacity(if expanded { 1. } else { 0. })
+                            .group_hover(group, |el| el.opacity(1.))
+                            .child(
+                                gpui::svg()
+                                    .data(if expanded {
+                                        CHEVRON_DOWN
+                                    } else {
+                                        CHEVRON_RIGHT
+                                    })
+                                    .size(px(13.))
+                                    .text_color(theme.TEXT_FAINT),
+                            ),
+                    ),
+            )
+            .into_any_element()
     }
 }
 
@@ -369,7 +386,14 @@ mod tests {
     #[test]
     fn labels_group_tools_by_kind_in_first_use_order() {
         assert_eq!(
-            summary_label(&names(&["read", "read", "edit", "apply_patch", "bash", "read"])),
+            summary_label(&names(&[
+                "read",
+                "read",
+                "edit",
+                "apply_patch",
+                "bash",
+                "read"
+            ])),
             "Read 3 files, edited 2 files, ran 1 command"
         );
         assert_eq!(
