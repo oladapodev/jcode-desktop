@@ -82,6 +82,12 @@ impl Progress {
         self.tick_at(Instant::now())
     }
 
+    /// Whether [`Self::tick`] would change nothing right now, so a monitor
+    /// polling it need not update the workspace.
+    pub(super) fn settled(&self) -> bool {
+        !self.clone().tick_at(Instant::now())
+    }
+
     fn tick_at(&mut self, now: Instant) -> bool {
         if self.failed || self.phase == Some(LABELS.len()) {
             return false;
@@ -167,6 +173,20 @@ impl Progress {
 mod tests {
     use super::*;
 
+    /// The cloud monitor polls every 100 ms and only updates the workspace
+    /// when a tick would change text, since each update rebuilds it.
+    #[test]
+    fn settled_only_when_a_tick_changes_nothing() {
+        assert!(Progress::default().settled(), "an unstarted checklist is still");
+        let mut progress = Progress::default();
+        let start = Instant::now() - Duration::from_secs(5);
+        progress.observe_at("Creating your Jcode Cloud machine…", false, start);
+        assert!(!progress.settled(), "a running step's clock needs a tick");
+        assert!(progress.tick());
+        assert!(progress.settled(), "within the same second nothing changes");
+        progress.observe("Session failed", true);
+        assert!(progress.settled(), "a stopped checklist never ticks");
+    }
     #[test]
     fn checklist_advances_only_with_observed_managed_phases() {
         let mut progress = Progress::default();

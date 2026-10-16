@@ -156,22 +156,46 @@ def median_of(runs, key):
 class App:
     """The real app on a private Xvfb with an isolated home and fixture data."""
 
-    def __init__(self, root, binary, retention, panels, rows, transcript):
+    def __init__(self, root, binary, retention, panels, rows, transcript,
+                 layout_mode='normal', view=None, panel_transcripts=None, minimap=False, extra_env=(),
+                 restore=None, config_extra=None, sessions=0, streaming=0, clicks=()):
         self.root = root
         for name in ('home', 'runtime', 'config', 'cache', 'data', 'jcode'):
             (root / name).mkdir(mode=0o700, parents=True, exist_ok=True)
+        seed_sessions(root / 'jcode', sessions, streaming)
         env = isolated_env(root)
         env['VK_DRIVER_FILES'] = str(next(Path('/usr/share/vulkan/icd.d').glob('lvp_icd*.json')))
         env['JCODE_DESKTOP_SCREENSHOT_PANELS'] = str(panels)
         env['JCODE_DESKTOP_SCREENSHOT_TRANSCRIPT'] = transcript
+        if panel_transcripts:
+            env['JCODE_DESKTOP_SCREENSHOT_PANEL_TRANSCRIPTS'] = panel_transcripts
+        if view:
+            # Opens one more panel (Machines) or a workspace view after launch.
+            env['JCODE_DESKTOP_SCREENSHOT_VIEW'] = view
+        if minimap:
+            env['JCODE_DESKTOP_SCREENSHOT_MINIMAP'] = '1'
+        for item in extra_env:
+            name, _, value = item.partition('=')
+            env[name] = value
+        if restore:
+            # Start from a saved workspace through the app's own crash-recovery
+            # path: a fresh checkpoint whose owner process is gone.
+            checkpoint = json.loads(Path(restore).read_text())
+            checkpoint.update(owner='perf-suite', pid=2 ** 22 + 7, updated_at_ms=int(time.time() * 1000))
+            state_dir = Path(env['XDG_STATE_HOME']) / 'jcode-desktop'
+            state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            (state_dir / 'crash-recovery.json').write_text(json.dumps(checkpoint))
         env['GPUI_VIEW_RETENTION'] = '1' if retention else '0'
         # Pass through tracing switches for investigations.
         for name in ('GPUI_TRACE_NOTIFY', 'GPUI_TRACE_RENDERS', 'GPUI_TRACE_WRITES', 'GPUI_TRACE_UPDATES', 'RUST_BACKTRACE'):
             if name in os.environ:
                 env[name] = os.environ[name]
         env['JCODE_DESKTOP_CONFIG'] = str(root / 'desktop.toml')
-        (root / 'desktop.toml').write_text('[appearance]\nlayout_mode = "normal"\n'
-                                           '[workspace]\ncoaching_hints = false\n')
+        extra = config_extra or {}
+        (root / 'desktop.toml').write_text(f'[appearance]\nlayout_mode = "{layout_mode}"\n'
+                                           + extra.get('appearance', '')
+                                           + '[workspace]\ncoaching_hints = false\n'
+                                           + extra.get('workspace', ''))
         self.env = env
         self.rows = rows
         self.processes, self.logs = [], []
@@ -195,10 +219,18 @@ class App:
         self._launch('wm', ['openbox', '--sm-disable', '--config-file', str(config)])
         time.sleep(0.5)
         self.app = self._launch('app', [str(binary), '--no-hot-reload'])
-        self._wait_rendered(panels)
+        self._wait_rendered(None if restore else panels)
         # Dismiss the launch overlay, then give the first frames time to settle.
         self.keys('Escape')
-        time.sleep(2)
+        # A --view opens 3.2 s after launch; let it open and settle too.
+        time.sleep(5 if view else 2)
+        for point in clicks:
+            # e.g. the sidebar's "All past sessions" toggle, then move away so
+            # no hover state is measured.
+            x, y = point.split(',')
+            subprocess.run(['xdotool', 'mousemove', x, y, 'click', '1', 'mousemove', '700', '990'],
+                           env=self.env, check=True, timeout=10)
+            time.sleep(1.5)
         if rows:
             # A second strip to move up and down between.
             self.keys(MOVE['down'])
@@ -215,7 +247,8 @@ class App:
 
     def _wait_rendered(self, panels):
         state = self.root / 'state'
-        widths = 'widths=' + ','.join([f'{1 / panels:.2f}'] * panels)
+        # A restored workspace has its own widths; any rendered strip will do.
+        widths = 'widths=' + (','.join([f'{1 / panels:.2f}'] * panels) if panels else '')
         deadline = time.monotonic() + 180
         while not state.exists() or widths not in state.read_text():
             if self.app.poll() is not None or time.monotonic() > deadline:
@@ -279,6 +312,10 @@ class App:
             raise RuntimeError('No profile samples; build with live profiling')
         frames = [json.loads(line) for line in source.read_text().splitlines() if line.endswith('}')]
         frames = [f for f in frames if before['unix_ms'] <= f['unix_ms'] <= after['unix_ms']]
+        # What was measured, for checking a reproduced layout by eye.
+        subprocess.run(['import', '-window', 'root', str(self.root / f'{capture}.png')],
+                       env=self.env, timeout=15, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         result = summarize(frames, before, after)
         result.update(actions=actions, distinct_states=len(states))
         if keys and len(states) < 2:
@@ -295,6 +332,29 @@ class App:
                 process.wait()
         for log in self.logs:
             log.close()
+
+
+def seed_sessions(jcode_home, count, streaming):
+    """Persisted sessions for the sidebar, the first `streaming` of them marked
+    as streaming by a live process (this one), like a daemon mid-turn."""
+    if not count:
+        return
+    sessions = jcode_home / 'sessions'
+    sessions.mkdir(parents=True, exist_ok=True)
+    marks = jcode_home / 'streaming_pids'
+    marks.mkdir(exist_ok=True)
+    now = time.time()
+    for index in range(count):
+        session_id = f'session_perf_{int(now * 1000) - index * 60_000}_{index:04x}'
+        path = sessions / f'{session_id}.json'
+        path.write_text(json.dumps(dict(
+            title=f'Perf session {index}: tune the idle redraw path', working_dir=f'/tmp/perf-project-{index % 7}',
+            status='Active' if index < streaming else 'Closed', last_pid=os.getpid() if index < streaming else None,
+            messages=[])))
+        stamp = now - index * 60
+        os.utime(path, (stamp, stamp))
+        if index < streaming:
+            (marks / session_id).write_text(str(os.getpid()))
 
 
 def compare(current, baseline, tolerance):
@@ -324,8 +384,29 @@ def main():
     parser.add_argument('--retention', choices=('on', 'off', 'both'), default='both')
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--seconds', type=float, default=8)
-    parser.add_argument('--panels', type=int, choices=range(2, 7), default=3)
+    parser.add_argument('--panels', type=int, choices=range(1, 7), default=3)
     parser.add_argument('--transcript', choices=('all', 'long-history', 'streaming', 'empty'), default='all')
+    parser.add_argument('--panel-transcripts', metavar='A,B,...',
+                        help='per-panel transcript fixtures by index, e.g. "empty,all,all,image"')
+    parser.add_argument('--layout-mode', choices=('normal', 'folder_tabs'), default='normal')
+    parser.add_argument('--view', choices=('machines', 'overview', 'agents'),
+                        help='open a view after launch; machines adds a settings://machines panel')
+    parser.add_argument('--minimap', action='store_true', help='show the workspace minimap')
+    parser.add_argument('--env', action='append', default=[], metavar='NAME=VALUE',
+                        help='extra app environment, e.g. JCODE_DESKTOP_SCREENSHOT_CLOUD_STARTUP=connecting')
+    parser.add_argument('--restore', type=Path, metavar='CHECKPOINT',
+                        help='restore this crash-recovery checkpoint (e.g. design/perf/user-layout-snapshot.json); '
+                             'add --env JCODE_DESKTOP_SCREENSHOT=0 to run the live (non-fixture) code paths')
+    parser.add_argument('--appearance', action='append', default=[], metavar='KEY=VALUE',
+                        help='extra [appearance] config line, e.g. theme="paper"')
+    parser.add_argument('--workspace-config', action='append', default=[], metavar='KEY=VALUE',
+                        help='extra [workspace] config line, e.g. default_remote_host="jcode-cloud"')
+    parser.add_argument('--sessions', type=int, default=0,
+                        help='seed this many persisted sessions into the isolated JCODE_HOME (live mode)')
+    parser.add_argument('--streaming', type=int, default=0,
+                        help='mark the first N seeded sessions as streaming by a live process')
+    parser.add_argument('--click', action='append', default=[], metavar='X,Y',
+                        help='click here after launch, e.g. 79,839 for "All past sessions"')
     parser.add_argument('--seed', type=int, default=7)
     parser.add_argument('--baseline', type=Path, help='summary.json of an earlier run to compare against')
     parser.add_argument('--tolerance', type=float, default=0.15,
@@ -343,7 +424,12 @@ def main():
     with binary.open('rb') as file:
         digest = hashlib.file_digest(file, 'sha256').hexdigest()
     meta = dict(binary=str(binary), sha256=digest, scenarios=scenarios, repeats=args.repeats,
-                seconds=args.seconds, panels=args.panels, transcript=args.transcript, seed=args.seed,
+                seconds=args.seconds, panels=args.panels, transcript=args.transcript,
+                panel_transcripts=args.panel_transcripts, layout_mode=args.layout_mode,
+                view=args.view, minimap=args.minimap, env=args.env,
+                restore=str(args.restore) if args.restore else None,
+                appearance=args.appearance, workspace_config=args.workspace_config,
+                sessions=args.sessions, streaming=args.streaming, seed=args.seed,
                 loadavg=Path('/proc/loadavg').read_text().strip())
     (root / 'capture.json').write_text(json.dumps(meta, indent=2) + '\n')
 
@@ -357,7 +443,12 @@ def main():
                 if not group:
                     continue
                 tag = f'{"on" if retention else "off"}-{"rows" if rows else "flat"}-{repeat}'
-                app = App(root / tag, binary, retention, args.panels, rows, args.transcript)
+                app = App(root / tag, binary, retention, args.panels, rows, args.transcript,
+                          args.layout_mode, args.view, args.panel_transcripts, args.minimap, args.env,
+                          args.restore,
+                          dict(appearance=''.join(line + '\n' for line in args.appearance),
+                               workspace=''.join(line + '\n' for line in args.workspace_config)),
+                          args.sessions, args.streaming, args.click)
                 try:
                     for scenario in group:
                         keys = scenario_keys(scenario, random.Random(args.seed))

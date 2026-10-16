@@ -478,3 +478,83 @@ fn idle_workspace_views_request_no_frames_and_ignore_noop_refreshes(
     assert_idle_workspace_is_still(crate::config::LayoutMode::FolderTabs, cx);
     super::REDESIGNED_NAVIGATION_IN_TEST.with(|cell| cell.set(false));
 }
+
+/// Workspace and Panel renders, Spinner and Ticker renders, and frames over
+/// one second of 30 Hz frames.
+fn animated_second(vcx: &mut gpui::VisualTestContext) -> (usize, u64, u64, u64) {
+    let workspace_before = view_renders("Workspace");
+    let panel_before = view_renders("Panel");
+    let marks_before = view_renders("Spinner") + view_renders("Ticker");
+    let mut frames = 0;
+    for _ in 0..30 {
+        frames += vcx.update(|window, cx| window.simulate_next_frame(cx));
+        vcx.executor()
+            .advance_clock(std::time::Duration::from_millis(34));
+        vcx.run_until_parked();
+    }
+    (
+        frames,
+        view_renders("Workspace") - workspace_before,
+        view_renders("Panel") - panel_before,
+        view_renders("Spinner") + view_renders("Ticker") - marks_before,
+    )
+}
+
+/// A session the daemon is streaming for (another client's turn, such as a
+/// terminal agent) spins in the redesigned sidebar. Its mark and breathing
+/// title are their own views: their ticks must never rebuild the workspace,
+/// which costs ~13 ms per frame with a real sidebar and drove the idle app
+/// to 30-45% of a core.
+#[gpui::test]
+fn daemon_running_sidebar_marks_do_not_rebuild_the_workspace(cx: &mut gpui::TestAppContext) {
+    super::REDESIGNED_NAVIGATION_IN_TEST.with(|cell| cell.set(true));
+    for layout_mode in [crate::config::LayoutMode::FolderTabs, crate::config::LayoutMode::Normal] {
+        // A past session, shown under its project in the history list.
+        let sessions = vec![
+            idle_session("session_external_turn", None, "active"),
+            idle_session("session_idle_other", None, "closed"),
+        ];
+        let (workspace, vcx) = cx.add_window_view(|_, cx| {
+            let mut workspace = Workspace::for_test(learning::Coach::new(), cx);
+            workspace.layout_mode = layout_mode;
+            workspace.sidebar_history.show_all = true;
+            workspace.push_test_panel("startup-home", cx);
+            workspace
+        });
+        workspace.update(vcx, |w, cx| {
+            w.apply(Update::Sessions { sessions: sessions.clone() }, cx);
+            // History projects start collapsed; expand the one with the run.
+            w.sidebar_projects
+                .collapsed
+                .insert("/tmp/idle-project".into(), false);
+            w.set_daemon_running(
+                ["session_external_turn".to_owned()].into_iter().collect(),
+                cx,
+            );
+            cx.notify();
+        });
+        for _ in 0..4 {
+            vcx.update(|window, cx| window.simulate_next_frame(cx));
+            vcx.executor()
+                .advance_clock(std::time::Duration::from_millis(500));
+            vcx.run_until_parked();
+        }
+        let spinning = (0..4).any(|row| {
+            vcx.debug_bounds(format!("sidebar-session-spinner-{row}").leak())
+                .is_some()
+        });
+        assert!(spinning, "{layout_mode:?}: the daemon-running row must show its spinner");
+        let (frames, workspace_renders, panel_renders, marks) = animated_second(vcx);
+        eprintln!(
+            "{layout_mode:?} daemon mark: frames={frames} workspace={workspace_renders} \
+             panel={panel_renders} marks={marks}"
+        );
+        assert!(marks >= 15, "{layout_mode:?}: the daemon mark must keep animating ({marks})");
+        assert!(
+            workspace_renders <= 1 && panel_renders <= 1,
+            "{layout_mode:?}: a daemon-running sidebar mark rebuilt Workspace {workspace_renders} \
+             and Panel {panel_renders} times in one second"
+        );
+    }
+    super::REDESIGNED_NAVIGATION_IN_TEST.with(|cell| cell.set(false));
+}

@@ -576,6 +576,41 @@ impl Workspace {
         self.remotes.cloud_monitor = Some(cx.spawn(async move |this, cx| {
             let mut previous_summary = String::new();
             loop {
+                // Updating the workspace, even to change nothing, makes GPUI
+                // rebuild all of it (~13 ms with a real sidebar) on the next
+                // frame, and any sidebar spinner draws a frame 30 times a
+                // second. Ten no-op updates a second kept an idle app at
+                // 30-45% of a core. Read first and update only when there is
+                // something to do.
+                let idle = this
+                    .read_with(cx, |this, cx| {
+                        let any_cloud_panel = this.slots.iter().any(|slot| {
+                            let panel = slot.panel.read(cx);
+                            live_cloud_panel(
+                                slot.closing,
+                                &panel.session_id,
+                                panel.history_loaded(),
+                                panel.is_pending_session(),
+                                this.remotes
+                                    .connected_cloud_sessions
+                                    .contains(&panel.session_id),
+                            )
+                        });
+                        !any_cloud_panel
+                            && this.remotes.cloud.idle_without_panels()
+                            && this
+                                .remotes
+                                .cloud_progress
+                                .values()
+                                .all(cloud_progress::Progress::settled)
+                    })
+                    .unwrap_or(false);
+                if idle {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(100))
+                        .await;
+                    continue;
+                }
                 if this
                     .update(cx, |this, cx| {
                         let active_cloud_panels: Vec<String> = this

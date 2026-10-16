@@ -700,6 +700,14 @@ impl Lifecycle {
         });
     }
 
+    /// Nothing for the UI monitor to do while no cloud panel is live: no
+    /// pending phase message, no readiness check to finish or fence, and no
+    /// active panel set to clear.
+    pub(super) fn idle_without_panels(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.updates.is_empty() && state.check_result.is_none() && state.active_panels.is_empty()
+    }
+
     pub(super) fn take_updates(&self) -> Vec<(String, bool, Option<String>)> {
         std::mem::take(&mut self.state.lock().unwrap().updates)
     }

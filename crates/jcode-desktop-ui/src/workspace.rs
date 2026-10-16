@@ -1011,11 +1011,19 @@ impl Workspace {
                         .background_executor()
                         .spawn(async { daemon_running_sessions() })
                         .await;
-                    if this
-                        .update(cx, |workspace: &mut Workspace, cx| {
-                            workspace.set_daemon_running(running, cx)
+                    // Read first: even an update that changes nothing makes
+                    // GPUI rebuild the retained workspace on its next frame.
+                    let unchanged = this
+                        .read_with(cx, |workspace: &Workspace, _| {
+                            workspace.daemon_running_unchanged(&running)
                         })
-                        .is_err()
+                        .unwrap_or(false);
+                    if !unchanged
+                        && this
+                            .update(cx, |workspace: &mut Workspace, cx| {
+                                workspace.set_daemon_running(running, cx)
+                            })
+                            .is_err()
                     {
                         break;
                     }
@@ -5937,12 +5945,15 @@ impl Workspace {
 
     /// Replace the set of sessions the daemon is running. Retains the existing
     /// mark of a session that is still running so its animation continues.
-    fn set_daemon_running(&mut self, running: HashSet<String>, cx: &mut Context<Self>) {
-        if running.len() == self.daemon_running.len()
+    fn daemon_running_unchanged(&self, running: &HashSet<String>) -> bool {
+        running.len() == self.daemon_running.len()
             && running
                 .iter()
                 .all(|id| self.daemon_running.contains_key(id))
-        {
+    }
+
+    fn set_daemon_running(&mut self, running: HashSet<String>, cx: &mut Context<Self>) {
+        if self.daemon_running_unchanged(&running) {
             return;
         }
         self.daemon_running.retain(|id, _| running.contains(id));
