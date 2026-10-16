@@ -122,12 +122,10 @@ fn narrow_short_panels_keep_composer_and_footer_controls_visible(cx: &mut gpui::
                 "identity controls must not overlap"
             );
             let build = vcx.debug_bounds("panel-build").unwrap();
-            // Build metadata is the first thing to yield room in narrow
-            // panels; once squeezed to nothing its position is moot.
+            // Build metadata yields space in the route line below the card.
             assert!(
-                (build.size.width == px(0.) || login.right() <= build.left())
-                    && build.top() >= input.bottom(),
-                "build metadata shares the pill row after the identity pills: {login:?} {build:?} {input:?} {footer:?}"
+                build.top() >= footer.bottom(),
+                "build metadata follows toolbar: {login:?} {build:?} {input:?} {footer:?}"
             );
             panel.update(vcx, |panel, cx| {
                 panel.input.update(cx, |input, cx| {

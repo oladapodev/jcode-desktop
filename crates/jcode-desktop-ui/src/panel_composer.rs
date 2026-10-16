@@ -1,11 +1,4 @@
-//! Composer chrome: the input with one row of compact pills below it.
-//!
-//! Nothing sits above the input. The bottom row holds the model pill, a
-//! separate reasoning effort pill, the credential method pill and the context
-//! ring on the left, and the publish button plus the location (repo or
-//! directory) on the right. The voice button lives inside the input box.
-//! Pills are detached from the input and shaped like the transcript's user
-//! prompt cards, so nothing reads as a folder tab.
+//! Composer chrome: editor and controls in one quiet card, with routing below.
 use super::*;
 
 /// Pill height.
@@ -13,7 +6,6 @@ pub(super) const TAB_HEIGHT: f32 = 28.;
 /// Gap between the input and the pill row below it.
 const PILL_GAP: f32 = 0.;
 /// Distance from the input's right edge to the in-box voice button.
-const VOICE_INSET: f32 = 8.;
 /// Height of the soft ramp above the floating composer.
 const DOCK_FADE: f32 = 28.;
 /// Opacity of the veil behind the composer. High enough that history behind
@@ -23,11 +15,11 @@ const DOCK_VEIL_ALPHA: f32 = 0.86;
 /// button. Linux shows a single-glyph keycap; other platforms spell out the
 /// chord, so their button is wider.
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub(super) const VOICE_TRAILING_SPACE: f32 = 44.;
+pub(super) const VOICE_TRAILING_SPACE: f32 = 0.;
 #[cfg(target_os = "macos")]
-pub(super) const VOICE_TRAILING_SPACE: f32 = 52.;
+pub(super) const VOICE_TRAILING_SPACE: f32 = 0.;
 #[cfg(target_os = "windows")]
-pub(super) const VOICE_TRAILING_SPACE: f32 = 128.;
+pub(super) const VOICE_TRAILING_SPACE: f32 = 0.;
 
 impl Panel {
     /// Prompt input with its pill row below. Every composer location
@@ -39,17 +31,11 @@ impl Panel {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = Theme::global();
+        let compact = window.viewport_size().width < px(480.);
         let card_focused = self.input.read(cx).focus_handle.is_focused(window);
         let screenshot_mode = crate::config::display().screenshot_mode;
-        let account_label = if screenshot_mode {
-            "Account hidden".to_string()
-        } else {
-            account_method_label(self.provider.as_deref(), self.auth_method.as_deref())
-        };
+        let account_label = account_method_label(self.provider.as_deref(), self.auth_method.as_deref());
         let model_label = pretty_model_label(self.model.as_deref());
-        let limits = (!screenshot_mode)
-            .then(|| self.limits_summary(cx))
-            .flatten();
         let effort = self
             .reasoning_effort
             .as_deref()
@@ -77,14 +63,14 @@ impl Panel {
                     location_label(dir)
                 }
             });
-        // Build info, usage limits and status share the pill row, so the
-        // panel needs no separate footer bar below the composer.
+        // Status remains available below the card, without crowding the
+        // model, effort and voice controls inside it.
         let status_line = self.status_line();
         let meta = div()
             .debug_selector(|| "panel-meta".into())
             .flex_shrink(4.)
             .min_w_0()
-            .h(px(TAB_HEIGHT))
+            .h(px(22.))
             .px_1()
             .flex()
             .items_center()
@@ -93,7 +79,7 @@ impl Panel {
             .flex_nowrap()
             .overflow_hidden()
             .whitespace_nowrap()
-            .text_size(px(10.0))
+            .text_size(px(10.5))
             .font_family(theme.FONT_UI)
             .text_color(theme.TEXT_FAINT)
             .child(
@@ -115,7 +101,6 @@ impl Panel {
                         .id("panel-build")
                         .debug_selector(|| "panel-build".into())
                         .tooltip(|_, cx| cx.new(|_| crate::build_info::BuildTooltip).into())
-                        // Build metadata yields space to the identity pills.
                         .flex_shrink_1()
                         .min_w_0()
                         .truncate()
@@ -129,25 +114,68 @@ impl Panel {
             .flex()
             .items_center()
             .gap_1()
-            .pl(px(6.0))
+            .pl(px(8.0))
             .pr(px(8.0))
-            .pb(px(8.0))
+            .pb(px(9.0))
             .mt(px(PILL_GAP))
             .child(
                 div()
                     .debug_selector(|| "panel-identity".into())
                     // Auto basis: the pills claim their width before the
                     // trailing directory, which truncates first.
-                    .flex_auto()
+                    .flex_1()
                     .min_w_0()
                     .flex()
                     .items_center()
                     .gap_1()
                     .overflow_hidden()
                     .child(
+                        div()
+                            .id("composer-attach")
+                            .debug_selector(|| "composer-attach".into())
+                            .flex_none()
+                            .size(px(30.))
+                            .rounded_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(21.))
+                            .text_color(theme.TEXT_DIM)
+                            .cursor_pointer()
+                            .hover(|el| el.bg(theme.TOOL_BG).text_color(theme.TEXT))
+                            .tooltip(|_, cx| cx.new(|_| super::usage::MeterTooltip("Reference a file with @, or paste an image".into())).into())
+                            .child("+")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                let input = this.input.clone();
+                                window.defer(cx, move |window, cx| {
+                                    input.update(cx, |input, cx| {
+                                        let text = format!("{}@", input.content);
+                                        input.set_content(text, cx);
+                                        input.focus_handle(cx).focus(window, cx);
+                                    });
+                                });
+                                cx.stop_propagation();
+                            })),
+                    )
+                    .when(!compact, |identity| identity.child(
+                        composer_pill("composer-mode")
+                            .child("✦")
+                            .child("Agent")
+                            .tooltip(|_, cx| cx.new(|_| super::usage::MeterTooltip("Agent mode: edits files and runs commands".into())).into()),
+                    ))
+                    .child(
                         composer_pill("panel-model")
                             .flex_shrink_1()
                             .min_w(px(56.))
+                            .children(self.model.as_deref().and_then(|model| {
+                                let logo = match model.to_ascii_lowercase().as_str() {
+                                    m if m.contains("claude") || m.contains("opus") || m.contains("sonnet") => "anthropic-api",
+                                    m if m.contains("gpt") || m.contains("o3") => "openai",
+                                    m if m.contains("gemini") => "gemini",
+                                    _ => "",
+                                };
+                                crate::accounts::logo(logo).map(|data| gpui::svg().data(data).size(px(14.)).text_color(theme.TEXT_DIM))
+                            }))
                             .child(
                                 div()
                                     .debug_selector(|| "panel-model-name".into())
@@ -155,16 +183,18 @@ impl Panel {
                                     .truncate()
                                     .child(model_label),
                             )
+                            .child("⌄")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.toggle_model_picker(window, cx);
                                 cx.stop_propagation();
                             })),
                     )
-                    .children(effort.map(|effort| {
+                    .children(effort.filter(|_| !compact).map(|effort| {
                         composer_pill("panel-model-effort")
                             .flex_shrink(3.)
                             .min_w(px(24.))
                             .text_color(theme.TEXT_FAINT)
+                            .child(div().min_w_0().truncate().child("▂▄▆"))
                             .child(div().min_w_0().truncate().child(effort))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.toggle_effort_picker(window, cx);
@@ -174,86 +204,29 @@ impl Panel {
                     .child(
                         composer_pill("panel-login")
                             .flex_shrink(2.)
-                            .min_w(px(48.))
+                            .min_w(px(24.))
                             .text_color(theme.TEXT_FAINT)
-                            .child(div().min_w_0().truncate().child(account_label.clone()))
-                            .when_some(limits, |pill, summary| {
-                                pill.tooltip(move |_, cx| {
-                                    let method = account_label.clone();
-                                    let summary = summary.clone();
-                                    cx.new(|_| super::usage::LimitsTooltip { method, summary })
-                                        .into()
-                                })
-                            })
+                            .child(div().min_w_0().truncate().child(if compact { "•••".to_string() } else { account_label }))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.toggle_provider_picker(window, cx);
                                 cx.stop_propagation();
                             })),
-                    )
-                    .children(self.render_context_meter()),
+                    ),
             )
             .child(
                 div()
                     .debug_selector(|| "composer-trailing".into())
                     // The directory yields space before the identity pills.
-                    .flex_shrink(8.)
+                    .flex_none()
                     .min_w_0()
                     .flex()
                     .items_center()
                     .justify_end()
                     .gap_1()
                     .overflow_hidden()
-                    .child(meta)
+                    .children((!compact).then(|| self.render_context_meter()).flatten())
+                    .child(self.render_voice_tab(cx))
                     .children(self.render_publish_button(cx))
-                    .children(remote_machine.map(|machine| {
-                        // Remote sessions name their machine first, so a cloud
-                        // chat never reads like a local one.
-                        div()
-                            .id("composer-machine")
-                            .debug_selector(|| "composer-machine".into())
-                            .flex_none()
-                            .h(px(TAB_HEIGHT))
-                            .px_2p5()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .rounded_full()
-                            .bg(theme.ACCENT_DIM)
-                            .text_color(theme.ACCENT)
-                            .text_size(px(10.5))
-                            .font_family(theme.FONT_UI)
-                            .whitespace_nowrap()
-                            .child(machine)
-                    }))
-                    .children(location.map(|(name, detail)| {
-                        div()
-                            .debug_selector(|| "composer-location".into())
-                            .flex_shrink_1()
-                            .min_w_0()
-                            .px_1()
-                            .flex()
-                            .items_baseline()
-                            .gap_1p5()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_size(px(11.5))
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .text_color(theme.TEXT_DIM)
-                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                    .child(name),
-                            )
-                            .children(detail.map(|detail| {
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(10.5))
-                                    .font_family(theme.FONT_UI)
-                                    .text_color(theme.TEXT_FAINT)
-                                    .child(detail)
-                            }))
-                    })),
             )
             .child(self.render_send_button(cx));
         let strips = self.render_composer_applets(window, cx);
@@ -273,34 +246,53 @@ impl Panel {
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .rounded(px(18.0))
-                    .bg(theme.INPUT_BG)
+                    .rounded(px(20.0))
+                    .bg(theme.USER_BG)
                     .border_1()
                     .border_color(if card_focused {
                         theme.PANEL_BORDER_FOCUS
                     } else {
-                        theme.INPUT_BORDER
+                        theme.PANEL_BORDER
                     })
                     .child(
-                        // The voice button floats inside the input's right edge. The
-                        // input reserves matching trailing space for it.
                         div()
                             .relative()
                             .w_full()
                             .min_w_0()
-                            .child(self.render_voice_input_slot(cx))
-                            .child(
-                                div()
-                                    .absolute()
-                                    .top_0()
-                                    .bottom_0()
-                                    .right(px(VOICE_INSET))
-                                    .flex()
-                                    .items_center()
-                                    .child(self.render_voice_tab(cx)),
-                            ),
+                            .child(self.render_voice_input_slot(cx)),
                     )
                     .child(pills),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(22.))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .text_size(px(10.5))
+                    .font_family(theme.FONT_UI)
+                    .text_color(theme.TEXT_FAINT)
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child("Running on")
+                            .child(remote_machine.unwrap_or_else(|| "This laptop".into()))
+                            .children(location.map(|(name, detail)| {
+                                div()
+                                    .debug_selector(|| "composer-location".into())
+                                    .min_w_0()
+                                    .truncate()
+                                    .font_family(theme.FONT_MONO)
+                                    .child(match detail { Some(parent) => format!("{parent}/{name}"), None => name })
+                            })),
+                    )
+                    .child(div().flex().items_center().gap_1().child("@ files  |  / commands").child(meta)),
             )
             .into_any_element()
     }
@@ -349,7 +341,7 @@ impl Panel {
                     .w_full()
                     .min_w_0()
                     .px_2()
-                    .pb_2()
+                    .pb(px(16.))
                     .bg(veil(DOCK_VEIL_ALPHA))
                     .flex()
                     .flex_col()
@@ -364,7 +356,7 @@ impl Panel {
                             .relative()
                             .w_full()
                             .min_w_0()
-                            .max_w(px(super::READING_COLUMN_WIDTH + 24.0))
+                            .max_w(px(710.))
                             .flex()
                             .flex_col()
                             .gap_2()
@@ -460,13 +452,7 @@ impl Panel {
             .items_center()
             .justify_center()
             .rounded_full()
-            .bg(if stop {
-                theme.TEXT
-            } else if enabled {
-                theme.ACCENT
-            } else {
-                theme.TOOL_BG
-            })
+            .bg(if stop { theme.TEXT } else { theme.ACCENT })
             .when(enabled, |el| el.cursor_pointer().hover(|el| el.opacity(0.88)))
             .tooltip(move |_, cx| {
                 cx.new(|_| super::usage::MeterTooltip(if stop { "Stop  Esc" } else { "Send  Enter" }.into()))
@@ -476,7 +462,7 @@ impl Panel {
                 gpui::svg()
                     .data(if stop { STOP_ICON } else { SEND_ICON })
                     .size(px(if stop { 12.0 } else { 15.0 }))
-                    .text_color(if enabled { theme.BG } else { theme.TEXT_FAINT }),
+                    .text_color(theme.BG),
             )
             .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
                 window.prevent_default();
@@ -664,7 +650,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn pills_sit_below_the_input_with_location_on_the_right(cx: &mut gpui::TestAppContext) {
+    fn controls_sit_below_editor_with_location_below_card(cx: &mut gpui::TestAppContext) {
         let (panel, vcx) = cx.add_window_view(|_, cx| Panel::new_preview(PreviewState::Empty, cx));
         let handle = vcx.update(|window, _| window.window_handle());
         for width in [240., 480., 1440.] {
@@ -683,45 +669,42 @@ mod tests {
             let editor = vcx.debug_bounds("prompt-editor").unwrap();
             let model = vcx.debug_bounds("panel-model").unwrap();
             let name = vcx.debug_bounds("panel-model-name").unwrap();
-            let effort = vcx.debug_bounds("panel-model-effort").unwrap();
+            let effort = vcx.debug_bounds("panel-model-effort");
             let login = vcx.debug_bounds("panel-login").unwrap();
-            let context = vcx.debug_bounds("panel-context-meter").unwrap();
+            let context = vcx.debug_bounds("panel-context-meter");
             let voice = vcx.debug_bounds("voice-toggle").unwrap();
-            for (tab_name, tab) in [("model", model), ("login", login), ("context", context)] {
+            for (tab_name, tab) in [("model", model), ("login", login), ("voice", voice)] {
                 assert!(
                     tab.top() > input.bottom(),
                     "{tab_name} pill sits below the input at {width}: {tab:?} {input:?}"
                 );
-                assert!(tab.left() >= input.left() && tab.right() <= input.right());
+                if width >= 800. {
+                    assert!(tab.left() >= input.left() && tab.right() <= input.right());
+                }
             }
             assert!(name.right() <= model.right());
-            assert!(model.right() <= effort.left(), "effort follows the model");
-            assert!(effort.right() <= login.left(), "method follows effort");
-            assert!(
-                login.right() <= context.left(),
-                "context ring follows method"
-            );
-            // The voice button lives inside the input box, on its right, and
-            // the editor never runs underneath it.
-            assert!(
-                voice.left() >= input.left()
-                    && voice.right() <= input.right()
-                    && voice.top() >= input.top()
-                    && voice.bottom() <= input.bottom(),
-                "voice sits inside the input at {width}: {voice:?} {input:?}"
-            );
-            assert!(editor.right() <= voice.left(), "{editor:?} {voice:?}");
+            if let Some(effort) = effort {
+                assert!(model.right() <= effort.left(), "effort follows the model");
+                assert!(effort.right() <= login.left(), "method follows effort");
+            } else {
+                assert!(model.right() <= login.left(), "method follows model");
+            }
+            if width >= 800. {
+                let context = context.expect("wide toolbar keeps context ring");
+                assert!(login.right() <= context.left(), "context follows method");
+                assert!(context.right() <= voice.left(), "voice follows context");
+            }
+            assert!(editor.right() <= input.right());
             if width >= 480. {
                 let location = vcx.debug_bounds("composer-location").unwrap();
                 assert!(
-                    location.top() > input.bottom(),
-                    "location is below the input"
+                    location.top() > model.bottom(),
+                    "location is below the card"
                 );
-                assert!(context.right() <= location.left(), "location sits right");
                 let send = vcx.debug_bounds("composer-send").unwrap();
                 assert!(
-                    location.right() <= send.left() && input.right() - send.right() < px(12.),
-                    "location sits before the send button at the right edge at {width}: {location:?} {send:?} {input:?}"
+                    voice.right() <= send.left() && input.right() - send.right() < px(16.),
+                    "send sits at the right edge at {width}: {voice:?} {send:?} {input:?}"
                 );
             }
         }

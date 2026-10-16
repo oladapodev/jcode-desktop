@@ -14,7 +14,7 @@ pub(crate) fn render_status(name: &str, done: bool, failed: bool) -> Div {
     let state = status(done, failed);
     let theme = Theme::global();
     let color = match state {
-        Status::Running => theme.WARN,
+        Status::Running => theme.ACCENT,
         Status::Succeeded => theme.OK,
         Status::Failed => theme.ERROR,
     };
@@ -26,8 +26,8 @@ pub(crate) fn render_status(name: &str, done: bool, failed: bool) -> Div {
         .child(icon)
 }
 
-/// Keep the tool identity together in a quiet, non-interactive pill.
-/// The intent remains outside so it stays the primary label.
+/// Keep the tool glyph and name together without placing a second badge
+/// around the label. The glyph disc is the run-thread node.
 pub(crate) fn render_badge(name: &str, done: bool, failed: bool) -> Div {
     render_badge_with_label(name, done, failed, name.to_owned().into_any_element())
 }
@@ -56,6 +56,48 @@ pub(crate) fn render_badge_with_label(
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_size(px(12.0))
                 .line_height(px(14.0))
+                .text_color(theme.TEXT_DIM)
+                .child(label),
+        )
+}
+
+/// Larger transcript-only node. Diff previews and compact tool labels keep
+/// their original 14px status icon and 18px identity geometry.
+pub(crate) fn render_thread_badge_with_label(
+    name: &str,
+    done: bool,
+    failed: bool,
+    label: gpui::AnyElement,
+) -> Div {
+    let theme = Theme::global();
+    div()
+        .debug_selector(|| "tool-identity-pill".into())
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(12.))
+        .child(
+            div()
+                .size(px(27.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(if !done && !failed {
+                    theme.ACCENT.opacity(0.15)
+                } else {
+                    theme.USER_BG.into()
+                })
+                .child(render_status(name, done, failed)),
+        )
+        .child(
+            div()
+                .debug_selector(|| "tool-name".into())
+                .font_family(theme.FONT_UI)
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_size(px(13.5))
+                .line_height(px(20.))
                 .text_color(theme.TEXT_DIM)
                 .child(label),
         )

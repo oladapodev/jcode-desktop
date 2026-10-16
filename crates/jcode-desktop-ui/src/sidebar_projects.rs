@@ -253,11 +253,11 @@ impl Workspace {
             .group(group)
             .relative()
             .mx_2()
-            .mt(px(6.0))
-            .mb(px(2.0))
-            .pl(px(8.0))
+            .mt(px(2.0))
+            .mb(px(1.0))
+            .pl(px(6.0))
             .pr_1()
-            .h(px(28.0))
+            .h(px(30.0))
             .flex()
             .items_center()
             .gap(px(6.0))
@@ -277,11 +277,9 @@ impl Workspace {
                     cx.notify();
                 }),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .child(sidebar_worktrees::icon(sidebar_worktrees::FOLDER_ICON, 14.0)),
-            )
+            .child(div().flex_none().w(px(13.0)).text_size(px(14.0))
+                .text_color(theme.TEXT_FAINT)
+                .child(if collapsed { "›" } else { "⌄" }))
             .child(
                 div()
                     .flex_shrink(1.0)
@@ -305,21 +303,14 @@ impl Workspace {
                     .gap(px(3.0))
                     .rounded_full()
                     .bg(theme.TOOL_BG)
-                    .text_size(px(9.0))
+                    .text_size(px(10.5))
                     .text_color(theme.TEXT_DIM)
                     .child(sidebar_worktrees::icon(sidebar_worktrees::BRANCH_ICON, 9.0))
                     .child(div().min_w_0().truncate().child(branch))
             }))
             .child(div().flex_1())
-            .child(
-                div()
-                    .flex_none()
-                    .pr(px(4.0))
-                    .text_right()
-                    .text_size(px(11.0))
-                    .text_color(theme.TEXT_FAINT)
-                    .child(if collapsed { format!("{count} ›") } else { count.to_string() }),
-            )
+            .child(div().flex_none().pr(px(4.0)).text_size(px(11.0))
+                .text_color(theme.TEXT_FAINT).child(count.to_string()))
             // Actions overlay the row end on hover instead of reserving width.
             .when(git || local.is_some(), |el| {
                 let mut actions = sidebar_worktrees::hover_actions(group, 24.0);

@@ -379,9 +379,7 @@ impl Render for Preview {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .border_1()
-            .border_color(theme.CODE_BORDER)
-            .rounded_md()
+            .rounded(px(10.0))
             .bg(theme.CODE_BG)
             .child(
                 div()
@@ -390,18 +388,19 @@ impl Render for Preview {
                     .justify_between()
                     .px_3()
                     .py_2()
-                    .text_size(px(11.0))
+                    .text_size(px(12.0))
                     .text_color(theme.TEXT_DIM)
                     .bg(theme.CODE_HEADER_BG)
-                    .child("HTML preview · isolated · offline")
+                    .child("Browser preview")
                     .child(
                         div()
                             .flex()
-                            .gap_3()
+                            .gap_2()
                             .child(
                                 div()
                                     .id("html-source")
                                     .cursor_pointer()
+                                    .px_2().py_1().rounded_full().bg(theme.PANEL_BG)
                                     .child(if self.show_source {
                                         "Preview"
                                     } else {
@@ -416,6 +415,7 @@ impl Render for Preview {
                                 div()
                                     .id("html-copy")
                                     .cursor_pointer()
+                                    .px_2().py_1().rounded_full().bg(theme.PANEL_BG)
                                     .child("Copy")
                                     .on_click(move |_, _, cx| {
                                         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
@@ -427,6 +427,7 @@ impl Render for Preview {
                                 div()
                                     .id("html-expand")
                                     .cursor_pointer()
+                                    .px_2().py_1().rounded_full().bg(theme.PANEL_BG)
                                     .child(if self.expanded { "Collapse" } else { "Expand" })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.expanded = !this.expanded;
@@ -437,6 +438,7 @@ impl Render for Preview {
                                 div()
                                     .id("html-pause")
                                     .cursor_pointer()
+                                    .px_2().py_1().rounded_full().bg(theme.PANEL_BG)
                                     .child(if self.worker.is_some() {
                                         "Pause"
                                     } else {
@@ -521,18 +523,7 @@ impl Render for Preview {
                 cx.stop_propagation();
             }));
         root = root.child(surface);
-        root.child(
-            div()
-                .px_3()
-                .py_1()
-                .text_size(px(10.0))
-                .text_color(theme.TEXT_FAINT)
-                .child(if self.worker.is_some() {
-                    "Click to interact · local fonts · no network, files, or app access"
-                } else {
-                    "Paused · Retry restarts the document"
-                }),
-        )
+        root
     }
 }
 

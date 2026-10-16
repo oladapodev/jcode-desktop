@@ -662,9 +662,9 @@ impl Workspace {
                     .flex()
                     .flex_col()
                     .justify_center()
-                    .min_h(px(34.0))
-                    .px(px(10.0))
-                    .py(px(6.0))
+                    .min_h(px(40.0))
+                    .px(px(12.0))
+                    .py(px(8.0))
                     .cursor_pointer()
                     .rounded(px(8.0))
                     .when(is_selected, |el| el.bg(wash))
@@ -836,9 +836,9 @@ impl Workspace {
         let palette = div()
             .debug_selector(|| "resume-palette".into())
             .w_full()
-            .max_w(px(1120.0))
+            .max_w(px(760.0))
             .h_full()
-            .max_h(px(760.0))
+            .max_h(px(540.0))
             .flex()
             .flex_col()
             .rounded(px(16.0))
@@ -904,7 +904,7 @@ impl Workspace {
                     .items_center()
                     .gap(px(4.0))
                     .px(px(12.0))
-                    .pt(px(10.0))
+                    .pt(px(8.0))
                     .pb(px(6.0))
                     .text_size(px(12.5))
                     .child(
@@ -913,7 +913,7 @@ impl Workspace {
                             .pr(px(10.0))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(theme.TEXT_DIM)
-                            .child("Resume session"),
+                            .child("Sessions"),
                     )
                     .children(
                         [
@@ -961,7 +961,7 @@ impl Workspace {
                     .pb(px(6.0))
                     .child(
                         div()
-                            .w(relative(0.42))
+                            .w(relative(0.52))
                             .min_w_0()
                             .flex()
                             .flex_col()
@@ -991,7 +991,7 @@ impl Workspace {
             .debug_selector(|| "resume-panel".into())
             .size_full()
             .p(px(24.0))
-            .pt(px(40.0))
+            .pt(px(100.0))
             .flex()
             .flex_col()
             .items_center()

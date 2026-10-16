@@ -28,9 +28,9 @@ const FONT_SIZE: f32 = 13.0;
 const LINE_HEIGHT: f32 = 18.0;
 /// Pinch scale change that produces one Ctrl+wheel notch (Jcode zooms 10%).
 const PINCH_STEP: f32 = 0.1;
-const PADDING_X: f32 = 14.0;
+const PADDING_X: f32 = 12.0;
 const PADDING_BOTTOM: f32 = 10.0;
-const HEADER_HEIGHT: f32 = 30.0;
+const HEADER_HEIGHT: f32 = 0.0;
 // Keep one busy PTY from starving the UI thread. A later tick drains the rest.
 const POLL_BUDGET: usize = 256 * 1024;
 
@@ -52,24 +52,6 @@ fn sync_terminal_colors(terminal: &mut Terminal, theme: &Theme, focused: bool) {
         color_channels(theme.TEXT),
         color_channels(background(theme, focused)),
     );
-}
-
-/// `~/project` instead of the full home prefix keeps the header short.
-fn display_dir(path: &str) -> String {
-    if let Some(home) = crate::platform_dirs::home_dir() {
-        let home = home.display().to_string();
-        if !home.is_empty() && home != "/" {
-            if path == home {
-                return "~".into();
-            }
-            if let Some(rest) = path.strip_prefix(&home)
-                && rest.starts_with('/')
-            {
-                return format!("~{rest}");
-            }
-        }
-    }
-    path.to_owned()
 }
 
 actions!(terminal, [Copy, Paste]);
@@ -591,40 +573,12 @@ impl Render for TerminalPanel {
         let prepare = cx.entity();
         let input = cx.entity();
         let theme = Theme::global();
-        let title = self.title.clone().unwrap_or_else(|| "Terminal".into());
-        let cwd = self.working_dir.as_deref().map(display_dir);
+        // The pane tab already names the terminal. The prototype's PTY starts
+        // directly below that tab instead of repeating its title and cwd.
         let header = div()
             .debug_selector(|| "terminal-header".into())
             .flex_none()
-            .h(px(HEADER_HEIGHT))
-            .px(px(PADDING_X))
-            .flex()
-            .items_center()
-            .gap(px(10.0))
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .child(
-                div()
-                    .flex_none()
-                    .max_w(gpui::relative(0.6))
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .font_family(theme.FONT_UI)
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_size(px(12.0))
-                    .text_color(theme.TEXT_DIM)
-                    .child(title),
-            )
-            .children(cwd.map(|cwd| {
-                div()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .font_family(theme.FONT_MONO)
-                    .text_size(px(11.0))
-                    .text_color(theme.TEXT_FAINT)
-                    .child(cwd)
-            }));
+            .h(px(HEADER_HEIGHT));
         div()
             .id("plain-terminal")
             .debug_selector(|| "plain-terminal".into())

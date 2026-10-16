@@ -207,10 +207,6 @@ impl Workspace {
             .clone()
             .or_else(|| self.default_working_dir())
             .unwrap_or_else(|| "Not set".into());
-        let display = match &self.remotes.default_host {
-            Some(_) => "~".into(),
-            None => compact_path_in(&path, self.default_working_dir()),
-        };
         let tooltip = match &self.remotes.default_host {
             Some(host) => format!(
                 "Default directory on {host}: ~ (remote home)\nCustom remote directories are not configurable yet."
@@ -223,10 +219,9 @@ impl Workspace {
         div()
             .id("default-directory-button")
             .debug_selector(|| "default-directory-button".into())
-            .flex_1()
-            .min_w_0()
+            .flex_none()
+            .w(px(24.0))
             .ml_1()
-            .px_2()
             .h(px(28.0))
             .flex()
             .items_center()
@@ -239,6 +234,9 @@ impl Workspace {
                 cx.new(|_| remotes::HeaderTooltip(tooltip.clone().into()))
                     .into()
             })
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                cx.stop_propagation();
+            })
             .on_click(cx.listener(|this, _, window, cx| {
                 cx.stop_propagation();
                 if this.remotes.default_host.is_none() {
@@ -248,16 +246,11 @@ impl Workspace {
             .child(
                 div()
                     .debug_selector(|| "default-directory-path".into())
-                    .flex_1()
-                    .min_w_0()
-                    // Small enough to fit typical full paths. Anything longer
-                    // drops its start, since the leaf folder is what matters.
-                    .text_size(px(11.5))
+                    .w_full()
+                    .flex().items_center().justify_center()
                     .text_color(Theme::global().TEXT_DIM)
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis_start()
-                    .child(display),
+                    .child(gpui::svg().data(sidebar_worktrees::FOLDER_ICON)
+                        .size(px(14.0)).text_color(Theme::global().TEXT_DIM)),
             )
             .into_any_element()
     }

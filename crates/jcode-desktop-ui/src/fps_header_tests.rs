@@ -48,7 +48,15 @@ fn fps_and_new_session_share_the_tab_row_without_a_top_header(cx: &mut gpui::Tes
                     assert_eq!(body.top(), px(0.0));
                     assert_eq!(row.top(), canvas.top() + px(STRIP_PADDING_TOP));
                     assert_eq!(row.size.height, px(FOLDER_CONTENT_INSET));
-                    assert!(counter.left() >= row.left() && counter.right() <= tabs.left());
+                    let wide = sidebar && !responsive::is_compact(width)
+                        && f32::from(canvas.size.width) >= live_tabs::HEADER_WIDE_BREAKPOINT;
+                    if wide {
+                        let title = vcx.debug_bounds("header-session-title").unwrap();
+                        assert!(title.left() >= row.left() && title.right() <= tabs.left());
+                        assert!(counter.left() >= tabs.right() && counter.right() <= plus.left());
+                    } else {
+                        assert!(counter.left() >= row.left() && counter.right() <= tabs.left());
+                    }
                     assert!(counter.top() >= row.top() && counter.bottom() <= row.bottom());
                     assert!((counter.center().y - plus.center().y).abs() < px(1.0));
                     assert!(
@@ -71,7 +79,7 @@ fn fps_and_new_session_share_the_tab_row_without_a_top_header(cx: &mut gpui::Tes
                     );
                     if let Some(version) = vcx.debug_bounds("workspace-version") {
                         assert!(version.left() >= row.left());
-                        assert!(version.right() <= counter.left());
+                        assert!(version.right() <= if wide { tabs.left() } else { counter.left() });
                         assert_eq!(version.size.height, px(super::version::PILL_HEIGHT));
                         assert!(version.top() >= row.top() && version.bottom() <= row.bottom());
                         let build = vcx.debug_bounds("workspace-build").unwrap();

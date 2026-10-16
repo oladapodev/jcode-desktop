@@ -834,84 +834,69 @@ impl Workspace {
     pub(super) fn render_machine_switcher(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = Theme::global();
         let host = self.remotes.default_host.as_deref();
-        let button = |id: &'static str, icon: &'static [u8], title: String, selected: bool| {
-            let ink = if selected {
-                theme.TEXT
-            } else {
-                theme.TEXT_DIM
-            };
-            div()
-                .id(id)
-                .debug_selector(move || id.into())
-                .flex_none()
-                .size(px(28.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(7.0))
-                .cursor_pointer()
-                .when(selected, |el| el.bg(theme.PANEL_BG))
-                .hover(|el| el.bg(theme.PANEL_BG))
-                .tooltip(move |_, cx| cx.new(|_| HeaderTooltip(title.clone().into())).into())
-                .child(gpui::svg().data(icon).size(px(16.0)).text_color(ink))
+        let destination = match host {
+            None => "This laptop".to_string(),
+            Some(host) if managed_destination(host) => "Jcode Cloud".to_string(),
+            Some(host) => host.to_string(),
         };
         div()
             .debug_selector(|| "machine-destination-switcher".into())
             .flex_none()
-            .px_3()
-            .py_1p5()
+            .mx(px(10.0))
+            .my(px(3.0))
+            .px(px(10.0))
+            .py(px(4.0))
             .flex()
             .flex_col()
-            .gap_1()
-            .text_size(px(11.5))
+            .gap(px(1.0))
+            .rounded(px(12.0))
+            .bg(theme.HEADER_BG)
+            .cursor_pointer()
+            .hover(|el| el.bg(Theme::global().USER_BG))
+            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                this.open_machines(window, cx);
+            }))
+            .child(div().text_size(px(10.5)).text_color(theme.TEXT_FAINT)
+                .child("New sessions run on"))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
-                    .child(
-                        button(
-                            "machine-destination-local",
-                            include_bytes!("../../../assets/icons/computer.svg"),
-                            "This computer · Use locally for new sessions".into(),
-                            host.is_none(),
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
+                    .gap(px(8.0))
+                    .child(gpui::svg().data(include_bytes!("../../../assets/icons/computer.svg").as_slice())
+                        .size(px(15.0)).text_color(theme.TEXT_DIM))
+                    .child(div().id("machines-picker-button")
+                        .debug_selector(|| "machines-picker-button".into())
+                        .flex_1().text_size(px(12.5)).font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(theme.TEXT).child(destination))
+                    .child(div().id("machine-destination-local")
+                        .debug_selector(|| "machine-destination-local".into())
+                        .size(px(20.0)).flex_none().flex().items_center().justify_center()
+                        .rounded(px(6.0)).cursor_pointer()
+                        .hover(|el| el.bg(Theme::global().PANEL_BG))
+                        .tooltip(|_, cx| cx.new(|_| HeaderTooltip("Use this laptop for new sessions".into())).into())
+                        .child(gpui::svg().data(include_bytes!("../../../assets/icons/computer.svg").as_slice())
+                            .size(px(13.0)).text_color(if host.is_none() { theme.ACCENT } else { theme.TEXT_FAINT }))
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                            window.prevent_default();
                             cx.stop_propagation();
                             this.set_default_machine(None, cx);
-                        })),
-                    )
-                    .child(
-                        button(
-                            "machine-destination-cloud",
-                            include_bytes!("../../../assets/icons/machine-cloud.svg"),
-                            "Cloud · Use Jcode Cloud for new sessions".into(),
-                            host.is_some_and(managed_destination),
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
+                        })))
+                    .child(div().id("machine-destination-cloud")
+                        .debug_selector(|| "machine-destination-cloud".into())
+                        .size(px(20.0)).flex_none().flex().items_center().justify_center()
+                        .rounded(px(6.0)).cursor_pointer()
+                        .hover(|el| el.bg(Theme::global().PANEL_BG))
+                        .tooltip(|_, cx| cx.new(|_| HeaderTooltip("Use Jcode Cloud for new sessions".into())).into())
+                        .child(gpui::svg().data(include_bytes!("../../../assets/icons/machine-cloud.svg").as_slice())
+                            .size(px(13.0)).text_color(if host.is_some_and(managed_destination) { theme.ACCENT } else { theme.TEXT_FAINT }))
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                            window.prevent_default();
                             cx.stop_propagation();
                             this.set_default_machine(Some(MANAGED_CLOUD_HOST.into()), cx);
-                        })),
-                    )
-                    .child(
-                        button(
-                            "machines-picker-button",
-                            include_bytes!("../../../assets/icons/ssh.svg"),
-                            match host.filter(|host| !managed_destination(host)) {
-                                Some(host) => format!("SSH · {host} · Choose a remote host"),
-                                None => "SSH · Choose a remote host".into(),
-                            },
-                            host.is_some_and(|host| !managed_destination(host)),
-                        )
-                        .on_mouse_down(
-                            gpui::MouseButton::Left,
-                            cx.listener(|this, _, window, cx| {
-                                cx.stop_propagation();
-                                this.open_machines(window, cx);
-                            }),
-                        ),
-                    )
-                    .child(self.render_default_directory_button(cx)),
+                        })))
+                    .child(self.render_default_directory_button(cx))
+                    .child(div().text_color(theme.TEXT_FAINT).child("⌄")),
             )
             .when(self.remotes.failed, |el| {
                 el.child(
@@ -951,8 +936,8 @@ impl Workspace {
             .id("machines-picker")
             .debug_selector(|| "machines-picker".into())
             .size_full()
-            .px(px(20.0))
-            .py(px(18.0))
+            .px(px(28.0))
+            .py(px(30.0))
             .flex()
             .flex_col()
             .gap(px(8.0))
@@ -965,11 +950,11 @@ impl Workspace {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .mb(px(6.0))
+                    .mb(px(4.0))
                     .child(
                         div()
                             .id("machines-title")
-                            .text_size(px(20.0))
+                            .text_size(px(26.0))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .tooltip(|_, cx| {
                                 cx.new(|_| HeaderTooltip(
@@ -999,6 +984,8 @@ impl Workspace {
                             })),
                     ),
             )
+            .child(div().mb(px(18.0)).text_size(px(13.5)).text_color(theme.TEXT_DIM)
+                .child("Where your agents run. Choose a default machine for new sessions."))
             .child(
                 div()
                     .debug_selector(|| "machine-connection-status".into())
@@ -1199,19 +1186,20 @@ impl Workspace {
         div()
             .id(("machine-row", index))
             .group("machine-row")
-            .h(px(52.0))
-            .pl(px(10.0))
-            .pr(px(10.0))
+            .h(px(76.0))
+            .pl(px(16.0))
+            .pr(px(16.0))
             .flex()
             .items_center()
             .gap(px(12.0))
-            .rounded(px(14.0))
+            .rounded(px(16.0))
             .bg(theme.PANEL_BG)
+            .when(is_default, |el| el.border_1().border_color(theme.ACCENT.opacity(0.38)))
             .child(
                 div()
                     .flex_none()
-                    .size(px(32.0))
-                    .rounded(px(9.0))
+                    .size(px(42.0))
+                    .rounded(px(12.0))
                     .bg(theme.HEADER_BG)
                     .flex()
                     .items_center()
@@ -1219,49 +1207,29 @@ impl Workspace {
                     .child(
                         gpui::svg()
                             .data(icon)
-                            .size(px(16.0))
-                            .text_color(if is_default { theme.TEXT } else { theme.TEXT_DIM }),
+                            .size(px(20.0))
+                            .text_color(if is_default { theme.ACCENT } else { theme.TEXT_DIM }),
                     ),
             )
             .child(
-                div()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .text_size(px(13.5))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .when(host.as_deref().is_some_and(|host| !managed && !host.is_empty()), |el| {
-                        el.font_family(theme.FONT_MONO).text_size(px(12.5))
-                    })
-                    .child(label),
+                div().flex_1().min_w_0().flex().flex_col().gap(px(5.0))
+                    .child(div().flex().items_center().gap(px(8.0))
+                        .child(div().min_w_0().truncate().text_size(px(14.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD).child(label))
+                        .child(div().id(("machine-kind", index))
+                            .when(detail.is_some(), |el| el.debug_selector(|| "cloud-alpha-status".into()))
+                            .text_size(px(11.5)).text_color(if managed { theme.ACCENT } else { theme.TEXT_DIM })
+                            .when_some(detail, |el, detail| el.tooltip(move |_, cx| {
+                                cx.new(|_| HeaderTooltip(detail.clone().into())).into()
+                            })).child(kind))
+                        .when(is_default, |el| el.child(div().px(px(7.0)).py(px(2.0))
+                            .rounded_full().bg(theme.ACCENT_DIM).text_size(px(10.5))
+                            .text_color(theme.ACCENT).child("Default"))))
+                    .child(div().text_size(px(11.5)).text_color(theme.TEXT_FAINT)
+                        .child(if connected { "Online" } else if managed { "On demand" } else if host.is_none() { "Disconnected" } else { "Available via SSH" })),
             )
-            .child(
-                div()
-                    .id(("machine-kind", index))
-                    .when(detail.is_some(), |el| {
-                        el.debug_selector(|| "cloud-alpha-status".into())
-                    })
-                    .flex_none()
-                    .text_size(px(11.5))
-                    .text_color(theme.TEXT_FAINT)
-                    .when_some(detail, |el, detail| {
-                        el.tooltip(move |_, cx| {
-                            cx.new(|_| HeaderTooltip(detail.clone().into())).into()
-                        })
-                    })
-                    .child(kind),
-            )
-            .when(connected, |el| {
-                el.child(
-                    div()
-                        .id(("machine-connected", index))
-                        .flex_none()
-                        .text_size(px(11.5))
-                        .text_color(theme.OK)
-                        .child("Connected"),
-                )
-            })
+            .when(connected, |el| el.child(div().id(("machine-connected", index))
+                .text_size(px(11.0)).text_color(theme.OK).child("Connected")))
             .child(div().flex_1())
             .child(
                 div()

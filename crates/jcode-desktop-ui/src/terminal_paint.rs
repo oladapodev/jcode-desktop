@@ -115,12 +115,25 @@ impl TerminalPanel {
     ) -> Scene {
         let theme = Theme::global();
         let mut style = window.text_style();
-        style.font_family = theme.FONT_MONO.into();
+        // The unqualified Nerd Font includes proportional fallback glyphs. A
+        // width measured from its M is wider than the advance of ordinary
+        // letters, so forcing that width on each terminal cell letter-spaces
+        // complete ASCII runs. Use its explicitly monospaced face for both
+        // measurement and painting (and retain Menlo on macOS).
+        style.font_family = if cfg!(target_os = "macos") {
+            theme.FONT_MONO
+        } else {
+            "JetBrainsMono Nerd Font Mono"
+        }.into();
         style.font_size = px(FONT_SIZE).into();
-        let cell_width = window
+        // A single M can be wider than the ordinary digit/letter advance when
+        // fontconfig substitutes the regular Nerd Font or GPUI uses fallback.
+        // Averaging a run of digits also avoids single-glyph pixel rounding.
+        const CELL_PROBE: &str = "0000000000000000";
+        let cell_width = (window
             .text_system()
-            .shape_line("M".into(), px(FONT_SIZE), &[style.to_run(1)], None)
-            .width
+            .shape_line(CELL_PROBE.into(), px(FONT_SIZE), &[style.to_run(CELL_PROBE.len())], None)
+            .width / CELL_PROBE.len() as f32)
             .max(px(1.));
         self.resize(bounds, cell_width, cx);
         self.sync_images(window);
@@ -223,7 +236,11 @@ impl TerminalPanel {
                     text.into(),
                     px(FONT_SIZE),
                     &[run],
-                    ascii.then_some(cell_width),
+                    // `force_width` rewrites every glyph position. The native
+                    // mono face already supplies a consistent advance, and
+                    // forcing a single-glyph measurement onto it creates the
+                    // visibly letter-spaced terminal text.
+                    None,
                 );
                 scene.lines.push((origin, shaped));
             }

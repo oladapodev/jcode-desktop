@@ -5,13 +5,13 @@ const COMPACT_BREAKPOINT: f32 = 1100.0;
 pub(super) const SINGLE_PANEL_BREAKPOINT: f32 = 1100.0;
 /// A hidden sidebar on a wide window collapses to this icon rail.
 pub(super) const RAIL_WIDTH: f32 = 52.0;
-/// Square icon buttons inside the rail.
-const RAIL_BUTTON_SIZE: f32 = 32.0;
+/// Compact icon buttons inside the 52px rail.
+const RAIL_BUTTON_SIZE: f32 = 36.0;
 /// Flat sidebar navigation buttons (Normal layout).
 pub(super) const NAV_ITEM_HEIGHT: f32 = 26.0;
 
 const SHOW_SIDEBAR_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16M13.5 9.5 16 12l-2.5 2.5"/></g></svg>"#;
-const SESSIONS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></g></svg>"#;
+const WORKSPACE_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M9 10h12"/></svg>"#;
 const SETTINGS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></g></svg>"#;
 
 pub(super) fn is_compact(width: f32) -> bool {
@@ -93,7 +93,11 @@ fn rail_icon(id: &'static str, data: &'static [u8], size: f32) -> gpui::AnyEleme
         .data(data)
         .size(px(size))
         .flex_none()
-        .text_color(Theme::global().TEXT_DIM)
+        .text_color(if id == "sidebar-rail-new-session" {
+            Theme::global().ACCENT
+        } else {
+            Theme::global().TEXT_DIM
+        })
         .group_hover(id, |el| el.text_color(Theme::global().TEXT))
         .into_any_element()
 }
@@ -168,15 +172,24 @@ impl Workspace {
             .items_center()
             .gap(px(4.0))
             // Clear the macOS traffic lights, which sit over this column.
-            .pt(px(content_top_inset(false, fullscreen) + 6.0))
+            .pt(px(content_top_inset(false, fullscreen) + 12.0))
             .pb(px(10.0))
             // Its own surface in both layouts, so the icons never float on
             // the canvas. A hairline pane divider separates it from sheets
             // that share the same recessed tone in the folder layout.
             .bg(theme.HEADER_BG)
             .when(folders, |el| el.border_r_1().border_color(theme.PANEL_BORDER))
-            // The tab row's show-sidebar button sits right beside this rail,
-            // so the rail starts with the primary action instead of repeating it.
+            .child(
+                rail_button("sidebar-rail-brand", "Expand sidebar", div()
+                    .size(px(22.0)).rounded(px(6.0)).bg(theme.ACCENT)
+                    .font_family(theme.FONT_UI).font_weight(gpui::FontWeight::BOLD)
+                    .text_size(px(13.0)).text_color(theme.CODE_BG)
+                    .flex().items_center().justify_center().child("J").into_any_element())
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    this.expand_sidebar_to(None, cx);
+                })),
+            )
+            .child(div().h(px(10.0)))
             .child(
                 rail_button(
                     "sidebar-rail-new-session",
@@ -198,12 +211,19 @@ impl Workspace {
                     }),
                 ),
             )
-            .child(div().h(px(8.0)))
+            .child(
+                rail_button("sidebar-rail-search", "Search sessions", rail_icon(
+                    "sidebar-rail-search", br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>"#, 16.0))
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    this.expand_sidebar_to(Some(SidebarView::Sessions), cx);
+                })),
+            )
+            .child(div().my(px(6.0)).h(px(1.0)).w(px(24.0)).bg(theme.PANEL_BORDER))
             .child(
                 rail_button(
                     "sidebar-rail-sessions",
-                    "Sessions",
-                    rail_icon("sidebar-rail-sessions", SESSIONS_ICON, 16.0),
+                    "Workspace",
+                    rail_icon("sidebar-rail-sessions", WORKSPACE_ICON, 16.0),
                 )
                 .on_mouse_down(
                     gpui::MouseButton::Left,
@@ -215,9 +235,25 @@ impl Workspace {
                 ),
             )
             .child(
+                rail_button("sidebar-rail-agents", "Agents overview", rail_icon(
+                    "sidebar-rail-agents", br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M12 7v4M5 16v-4h14v4"/></svg>"#, 16.0))
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                    this.toggle_overview(&ToggleOverview, window, cx);
+                    cx.stop_propagation();
+                })),
+            )
+            .child(
+                rail_button("sidebar-rail-machines", "Machines", rail_icon(
+                    "sidebar-rail-machines", br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 8h.01M7 18h.01"/></svg>"#, 16.0))
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                    this.open_machines(window, cx);
+                    cx.stop_propagation();
+                })),
+            )
+            .child(
                 rail_button(
                     "sidebar-rail-files",
-                    "Files",
+                    "Files and apps",
                     rail_icon("sidebar-rail-files", super::sidebar_worktrees::FOLDER_ICON, 16.0),
                 )
                 .on_mouse_down(
@@ -229,7 +265,39 @@ impl Workspace {
                     }),
                 ),
             )
-            .child(div().flex_1())
+            .child(div().my(px(6.0)).h(px(1.0)).w(px(24.0)).bg(theme.PANEL_BORDER))
+            .child(
+                div().id("sidebar-rail-sessions-list").min_h_0().flex_1().flex().flex_col().items_center().gap(px(5.0))
+                    .overflow_y_scroll()
+                    .children(self.slots.iter().enumerate().filter(|(_, slot)| !slot.closing && !slot.panel.read(cx).session_id.starts_with("file://") && !slot.panel.read(cx).session_id.starts_with("side-panel://") && !slot.panel.read(cx).session_id.starts_with("terminal://")).take(8).map(|(index, slot)| {
+                        let title = slot.panel.read(cx).title.to_string();
+                        let initials = title.split_whitespace().take(2).filter_map(|word| word.chars().next()).collect::<String>();
+                        let active = index == self.active;
+                        div().id(("sidebar-rail-session", index))
+                            .debug_selector(move || format!("sidebar-rail-session-{index}").into())
+                            .size(px(RAIL_BUTTON_SIZE)).flex_none().flex().items_center().justify_center()
+                            .rounded(px(9.0)).cursor_pointer().occlude()
+                            .hover(|el| el.bg(Theme::global().PANEL_BG))
+                            .tooltip(move |_, cx| cx.new(|_| super::remotes::HeaderTooltip(title.clone().into())).into())
+                            .child(div()
+                            .font_family(theme.FONT_UI).font_weight(gpui::FontWeight::MEDIUM)
+                            .text_size(px(11.0)).text_color(if active { theme.TEXT } else { theme.TEXT_DIM })
+                            .child(if initials.is_empty() { "J".to_string() } else { initials }))
+                            .when(active, |el| el.bg(theme.PANEL_BG))
+                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _, window, cx| {
+                                this.set_active(index, cx);
+                                this.focus_active(window, cx);
+                            })).into_any_element()
+                    })),
+            )
+            .child(
+                rail_button("sidebar-rail-machine", "Current machine", rail_icon(
+                    "sidebar-rail-machine", br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>"#, 16.0))
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                    this.open_machines(window, cx);
+                    cx.stop_propagation();
+                })),
+            )
             .child(
                 rail_button(
                     "sidebar-rail-settings",
@@ -295,6 +363,13 @@ impl Workspace {
                         }
                     }),
                 ),
+            )
+            .child(
+                rail_button("sidebar-rail-expand", "Expand sidebar", rail_icon(
+                    "sidebar-rail-expand", SHOW_SIDEBAR_ICON, 16.0))
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    this.expand_sidebar_to(None, cx);
+                })),
             )
             .into_any_element()
     }

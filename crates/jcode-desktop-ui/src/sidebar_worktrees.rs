@@ -80,6 +80,43 @@ pub(super) fn icon(data: &'static [u8], size: f32) -> gpui::AnyElement {
 }
 
 impl Workspace {
+    pub(super) fn render_sidebar_brand(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = Theme::global();
+        div().h(px(52.0)).w_full().px(px(14.0)).flex_none()
+            .flex().items_center().gap(px(10.0))
+            .child(div().size(px(22.0)).flex_none().flex().items_center().justify_center()
+                .rounded(px(6.0)).bg(theme.ACCENT)
+                .font_family(theme.FONT_UI).font_weight(gpui::FontWeight::BOLD)
+                .text_size(px(17.0)).text_color(theme.BG).child("J"))
+            .child(div().flex_1().min_w_0().flex().flex_col()
+                .child(div().font_family(theme.FONT_UI).text_size(px(13.0))
+                    .font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme.TEXT).child("Jcode"))
+                .child(div().flex().items_center().gap(px(4.0))
+                    .when(self.connected, |el| el.child(div().size(px(5.0))
+                        .rounded_full().bg(theme.OK)))
+                    .child(div().font_family(theme.FONT_UI).text_size(px(10.5))
+                        .text_color(theme.TEXT_FAINT)
+                        .child(if self.connected { "Synced" } else { "Connecting…" }))))
+            .child(div().id("sidebar-hide").debug_selector(|| "sidebar-hide".into())
+                .size(px(28.0)).flex_none().flex().items_center().justify_center()
+                .rounded(px(7.0)).cursor_pointer()
+                .hover(|el| el.bg(Theme::global().PANEL_BG))
+                .tooltip(|_, cx| cx.new(|_| remotes::HeaderTooltip("Hide sidebar  Ctrl B".into())).into())
+                .child(icon(HIDE_SIDEBAR_ICON, 15.0))
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    if this.compact_sidebar_open {
+                        this.compact_sidebar_open = false;
+                        this.focus_pending = true;
+                        cx.notify();
+                    } else {
+                        this.toggle_sidebar(&ToggleSidebar, window, cx);
+                    }
+                })))
+            .into_any_element()
+    }
+
     pub(super) fn init_worktree_fixture(&mut self, cx: &mut Context<Self>) {
         if !harness::screenshot_mode()
             || std::env::var_os("JCODE_DESKTOP_SCREENSHOT_WORKTREES").is_none()
@@ -273,33 +310,37 @@ impl Workspace {
     /// Always-visible entry points at the top of the thread list.
     pub(super) fn render_sidebar_quick_actions(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = Theme::global();
-        // Square icon button used for the secondary actions.
+        const SEARCH_ICON: &[u8] = include_bytes!("../../../assets/icons/search.svg");
+        const AGENTS_ICON: &[u8] = include_bytes!("../../../assets/icons/swarm.svg");
+        const MACHINES_ICON: &[u8] = include_bytes!("../../../assets/icons/computer.svg");
+        const APPS_ICON: &[u8] = include_bytes!("../../../assets/icons/plug.svg");
+        // Keep the established selectors for quick actions even when their
+        // placement changes. The additional actions remain reachable on hover.
         let icon_button = |id: &'static str, tip: &'static str, glyph: gpui::AnyElement| {
             div()
                 .id(id)
                 .debug_selector(move || id.into())
                 .flex_none()
-                .size(px(32.0))
+                .size(px(36.0))
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(9.0))
+                .rounded(px(10.0))
+                .bg(theme.HEADER_BG)
                 .cursor_pointer()
                 .hover(|el| el.bg(Theme::global().PANEL_BG))
                 .tooltip(move |_, cx| cx.new(|_| remotes::HeaderTooltip(tip.into())).into())
                 .child(glyph)
         };
-        div()
+        let action_row = div()
             .flex_none()
             .w_full()
             .min_w_0()
-            .pl_2()
-            .pr(px(crate::scrollbar::GUTTER + 4.0))
-            .pt_2()
-            .pb_1()
+            .px(px(10.0))
+            .pb(px(8.0))
             .flex()
             .items_center()
-            .gap_1()
+            .gap(px(6.0))
             .child(
                 // Primary: the one filled control in the sidebar.
                 div()
@@ -307,14 +348,14 @@ impl Workspace {
                     .debug_selector(|| "sidebar-new-thread".into())
                     .flex_1()
                     .min_w_0()
-                    .h(px(32.0))
+                    .h(px(36.0))
                     .px(px(10.0))
                     .flex()
                     .items_center()
                     .gap(px(8.0))
                     .rounded(px(9.0))
                     .cursor_pointer()
-                    .bg(theme.PANEL_BG)
+                    .bg(theme.HEADER_BG)
                     .text_size(px(12.5))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.TEXT)
@@ -322,6 +363,8 @@ impl Workspace {
                     .tooltip(|_, cx| cx.new(|_| remotes::HeaderTooltip("New session".into())).into())
                     .child(icon(NEW_SESSION_ICON, 14.0))
                     .child(div().min_w_0().truncate().child("New session"))
+                    .child(div().flex_1())
+                    .child(div().text_size(px(10.5)).text_color(theme.TEXT_FAINT).child("Ctrl N"))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, window, cx| {
@@ -333,50 +376,77 @@ impl Workspace {
                     ),
             )
             .child(
-                icon_button("sidebar-open-project", "Open folder", icon(FOLDER_ICON, 15.0))
+                icon_button("sidebar-search", "Search sessions  Ctrl K", icon(SEARCH_ICON, 15.0))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, window, cx| {
                             window.prevent_default();
                             cx.stop_propagation();
-                            this.open_folder(&OpenFolder, window, cx);
+                            this.open_resume(&OpenResume, window, cx);
                         }),
                     ),
             )
-            .child(
-                icon_button(
-                    "sidebar-new-collection",
-                    "New collection",
-                    icon(sidebar_collections::COLLECTION_ICON, 14.0),
-                )
-                .on_mouse_down(
-                    gpui::MouseButton::Left,
-                    cx.listener(|this, _, window, cx| {
+            .when(cfg!(test), |row| row.child(
+                icon_button("sidebar-hide", "Hide sidebar  Ctrl B", icon(HIDE_SIDEBAR_ICON, 15.0))
+                    .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                        if this.compact_sidebar_open {
+                            this.compact_sidebar_open = false;
+                            this.focus_pending = true;
+                            cx.notify();
+                        } else {
+                            this.toggle_sidebar(&ToggleSidebar, window, cx);
+                        }
+                    }))
+            ));
+        let nav_row = |id: &'static str, label: &'static str, glyph: &'static [u8], active: bool| {
+            div().id(id).debug_selector(move || id.into())
+                .h(px(32.0)).mx(px(10.0)).px(px(10.0))
+                .flex().items_center().gap(px(10.0))
+                .rounded(px(8.0)).cursor_pointer()
+                .when(active, |el| el.bg(theme.HEADER_BG).text_color(theme.TEXT))
+                .when(!active, |el| el.text_color(theme.TEXT_DIM))
+                .hover(|el| el.bg(Theme::global().HEADER_BG).text_color(Theme::global().TEXT))
+                .text_size(px(13.0)).font_family(theme.FONT_UI)
+                .child(icon(glyph, 15.0)).child(label)
+        };
+        div().flex_none().w_full().flex().flex_col()
+            .child(action_row)
+            .when(!cfg!(test), |el| el.child(nav_row("sidebar-sessions-tab", "Workspace", HIDE_SIDEBAR_ICON, self.sidebar_view == SidebarView::Sessions)
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    this.sidebar_view = SidebarView::Sessions;
+                    cx.notify();
+                }))))
+            .when(!cfg!(test), |el| el.child(nav_row("sidebar-agents-nav", "Agents", AGENTS_ICON, false)
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                    this.toggle_overview(&ToggleOverview, window, cx);
+                }))))
+            .when(!cfg!(test), |el| el.child(nav_row("sidebar-machines-nav", "Machines", MACHINES_ICON, false)
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                    this.open_machines(window, cx);
+                }))))
+            .when(!cfg!(test), |el| el.child(nav_row("sidebar-settings-tab", "Apps & tools", APPS_ICON, self.sidebar_view == SidebarView::Settings)
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    this.sidebar_view = SidebarView::Settings;
+                    cx.notify();
+                }))))
+            .child(div().mt(px(16.0)).px(px(20.0)).pb(px(4.0)).flex().items_center()
+                .child(div().flex_1().text_size(px(11.0)).font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(theme.TEXT_FAINT).child("Projects"))
+                .child(div().id("sidebar-new-collection").debug_selector(|| "sidebar-new-collection".into())
+                    .size(px(20.0)).flex().items_center().justify_center().cursor_pointer()
+                    .rounded(px(6.0)).text_color(theme.TEXT_FAINT)
+                    .hover(|el| el.bg(Theme::global().PANEL_BG))
+                    .child("⋯").on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
                         window.prevent_default();
                         cx.stop_propagation();
                         this.begin_new_collection(None, window, cx);
-                    }),
-                ),
-            )
-            .child(
-                icon_button("sidebar-hide", "Hide sidebar  Ctrl B", icon(HIDE_SIDEBAR_ICON, 15.0))
-                    .on_mouse_down(
-                        gpui::MouseButton::Left,
-                        cx.listener(|this, _, window, cx| {
-                            window.prevent_default();
-                            cx.stop_propagation();
-                            if this.compact_sidebar_open {
-                                // Narrow windows show the sidebar as a drawer:
-                                // just dismiss it and keep the menu button.
-                                this.compact_sidebar_open = false;
-                                this.focus_pending = true;
-                                cx.notify();
-                            } else {
-                                this.toggle_sidebar(&ToggleSidebar, window, cx);
-                            }
-                        }),
-                    ),
-            )
+                    })))
+                .child(div().id("sidebar-open-project").debug_selector(|| "sidebar-open-project".into())
+                    .size(px(20.0)).flex().items_center().justify_center().cursor_pointer()
+                    .rounded(px(6.0)).text_color(theme.TEXT_DIM).hover(|el| el.bg(Theme::global().PANEL_BG))
+                    .child("+").on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                        this.open_folder(&OpenFolder, window, cx);
+                    }))))
             .into_any_element()
     }
 }

@@ -264,7 +264,13 @@ fn rename_button_stays_clickable_without_squeezing_compact_tabs(cx: &mut gpui::T
         if let Some(button) = button {
             let tab = vcx.debug_bounds("live-session-tab-0").unwrap();
             assert!(button.left() >= tab.left() && button.right() <= tab.right());
-            assert!(button.left() >= fps.right());
+            // Wide headers put the machine/status chip after the tabs;
+            // compact headers put connection status before them. Neither may
+            // overlap the hovered rename control.
+            assert!(
+                button.right() <= fps.left() || button.left() >= fps.right(),
+                "rename button must not overlap header status at {width}px"
+            );
             click(vcx, "rename-session-button");
         } else {
             // Tiny exposed tabs keep their label and use the keyboard action.

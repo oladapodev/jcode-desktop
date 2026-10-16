@@ -10,7 +10,7 @@ impl Workspace {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("/"));
         let bridge = self.bridge.clone();
-        let file = checkout.join("Cargo.toml");
+        let file = checkout.join("crates/jcode-desktop-ui/src/terminal_paint.rs");
         let page = jcode_sdk::SidePanelPage {
             id: "notes".into(),
             title: "Release notes".into(),

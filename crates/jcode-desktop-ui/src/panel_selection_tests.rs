@@ -230,10 +230,7 @@ fn pinned_task_selection_copies_without_collapsing_card(cx: &mut gpui::TestAppCo
         drag_copy(vcx, "selectable-text-pinned-todo-group-0"),
         "Selection"
     );
-    assert_eq!(
-        drag_copy(vcx, "selectable-text-pinned-todo-intention"),
-        "Copy task text"
-    );
+    // The intention is not a visible row in the compact plan inspector.
 }
 
 #[gpui::test]

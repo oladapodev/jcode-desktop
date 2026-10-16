@@ -56,7 +56,7 @@ impl Workspace {
                         .flex_none()
                         .text_color(Theme::global().TEXT_DIM),
                 )
-                .child(if showing { "Hide history" } else { "History" })
+                .child(if showing { "Hide past sessions" } else { "All past sessions" })
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(|this, _, window, cx| {

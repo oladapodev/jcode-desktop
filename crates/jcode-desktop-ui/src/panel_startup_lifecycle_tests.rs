@@ -176,11 +176,12 @@ fn resumed_transcript_keeps_cards_clear_of_the_composer_footer(cx: &mut gpui::Te
         let footer = vcx.debug_bounds("panel-meta").unwrap();
         let input = vcx.debug_bounds("prompt-input").unwrap();
         assert!(last_row.bottom() <= viewport.bottom() + px(1.));
-        let tabs = vcx.debug_bounds("composer-tabs").unwrap();
+        let card = vcx.debug_bounds("composer-card").unwrap();
         assert!(
-            tabs.top() - last_row.bottom() >= px(8.),
-            "last card must not crowd the composer tabs: {last_row:?}, {tabs:?}"
+            footer.top() - last_row.bottom() >= px(8.),
+            "last card must clear the footer below the floating composer: {last_row:?}, {footer:?}"
         );
+        assert!(card.bottom() <= footer.top());
         assert!(footer.top() >= input.bottom());
         assert!(input.bottom() <= px(height));
     }

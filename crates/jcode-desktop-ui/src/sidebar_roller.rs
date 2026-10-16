@@ -433,12 +433,12 @@ mod tests {
             });
             assert_eq!(vcx.debug_bounds("workspace-canvas").unwrap(), canvas);
             let current_body = vcx.debug_bounds("sidebar-tab-body").unwrap();
-            assert_eq!(current_body.bottom(), body.bottom());
             assert_eq!(current_body.size.width, body.size.width);
             if expected == SidebarView::Sessions {
                 assert_eq!(current_body, body);
             } else {
                 assert_eq!(current_body.top(), body.top());
+                assert_eq!(current_body.bottom(), body.bottom() + px(34.0));
             }
             // One unified sidebar: no Swarm/Worktrees mode switch in any view.
             assert!(vcx.debug_bounds("sidebar-workflow-switch").is_none());

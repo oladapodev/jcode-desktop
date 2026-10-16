@@ -935,8 +935,8 @@ impl Panel {
                 std::env::var("JCODE_DESKTOP_SCREENSHOT_TRANSCRIPT").as_deref(),
                 Ok("streaming" | "mermaid")
             );
-        let usage_fixture =
-            crate::harness::screenshot_mode() && fixture.as_deref() == Some("tokens");
+        let usage_fixture = crate::harness::screenshot_mode()
+            && matches!(fixture.as_deref(), Some("tokens" | "orb-todos"));
         let activity_status = if crate::harness::screenshot_mode() {
             match fixture.as_deref() {
                 Some("orb-working" | "orb-todos") => "running",
@@ -1828,7 +1828,7 @@ impl Panel {
             this.input = cx.new(|cx| {
                 PromptInput::new_with_queue(
                     cx,
-                    "Type something…",
+                    "Reply",
                     move |content, images, queued, _window, app| {
                         if images.is_empty()
                             && let Some(panel) = weak.upgrade()
@@ -1952,7 +1952,6 @@ impl Panel {
                         }
                     },
                 )
-                .with_example_prompts()
                 // The composer card draws the fill, border and corners.
                 .without_chrome()
                 .with_on_change(move |content, app| {
@@ -4171,16 +4170,25 @@ impl Panel {
                     .child(crate::tool_icon::animate_running(
                         div()
                             .debug_selector(|| "tool-header".into())
+                            .relative()
                             .flex()
                             .flex_row()
-                            .gap_2()
+                            .gap(px(8.))
                             .items_center()
                             .px_1()
-                            .py(px(3.0))
+                            .py(px(2.0))
                             .text_size(px(13.5))
-                            // Match the token pill's 14px line plus 2px padding per side.
-                            .line_height(px(18.0))
-                            .child(crate::tool_icon::render_badge_with_label(
+                            .line_height(px(20.0))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left(px(17.))
+                                    .top_0()
+                                    .bottom_0()
+                                    .w(px(1.))
+                                    .bg(Theme::global().PANEL_BORDER),
+                            )
+                            .child(crate::tool_icon::render_thread_badge_with_label(
                                 name,
                                 *done,
                                 error.is_some(),
@@ -4200,7 +4208,7 @@ impl Panel {
                                         .min_w_0()
                                         .overflow_hidden()
                                         .whitespace_nowrap()
-                                        .text_size(px(13.0))
+                                        .text_size(px(12.0))
                                         .text_color(Theme::global().TEXT_FAINT)
                                         .child(text_selection::plain(
                                             self.transcript_selection.clone(),
@@ -4669,6 +4677,9 @@ impl Render for Panel {
         let publish_tracker = self.render_publish_tracker(latest_todo.as_ref());
         let pinned_todo =
             latest_todo.filter(|payload| !payload.todos.is_empty() && publish_tracker.is_none());
+        let wide_plan = pinned_todo.is_some()
+            && window.viewport_size().width >= px(1280.)
+            && !self.image_pane_open;
         let has_pinned_todo = pinned_todo.is_some() || publish_tracker.is_some();
         // A separate virtual row keeps activity below text, reasoning, and tools.
         // Only the small Spinner entity ticks, never the transcript itself.
@@ -4835,18 +4846,19 @@ impl Render for Panel {
                 .pb(px(if short_viewport { 8. } else { 64. }))
                 .child(
                     div()
+                        .relative()
                         .w_full()
                         .max_w(px(760.0))
                         .flex()
                         .flex_col()
-                        .gap_4()
+                        .gap(px(18.0))
                         .child(
                             div()
                                 .debug_selector(|| "fresh-session-heading".into())
                                 .font_family(Theme::global().FONT_UI)
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_size(px(22.0))
-                                .line_height(px(28.0))
+                                .text_size(px(30.0))
+                                .line_height(px(36.0))
                                 .text_color(Theme::global().TEXT)
                                 .child("What would you like to work on?"),
                         )
@@ -4860,7 +4872,31 @@ impl Render for Panel {
                                 .children(self.render_voice_pending())
                                 .child(self.render_composer(window, cx))
                                 .child(startup::input_marker(input_bounds.clone())),
-                        ),
+                        )
+                        .when(!short_viewport, |el| el.child(
+                            div().absolute().top(relative(1.0)).w_full()
+                                .pt(px(16.0)).flex().flex_wrap().gap(px(9.0))
+                                .children([
+                                    ("Fix a failing test", "Run the tests and fix whatever fails"),
+                                    ("Split work across agents", "/swarm "),
+                                    ("Review my changes", "/review"),
+                                    ("Explore this project", "Explore this project and suggest where to start"),
+                                ].into_iter().enumerate().map(|(index, (label, prompt))| {
+                                    div().id(("fresh-suggestion", index))
+                                        .px(px(14.0)).h(px(38.0)).flex().items_center()
+                                        .rounded_full().bg(Theme::global().HEADER_BG)
+                                        .border_1().border_color(Theme::global().PANEL_BORDER)
+                                        .cursor_pointer().text_size(px(12.5))
+                                        .text_color(Theme::global().TEXT_DIM)
+                                        .hover(|el| el.bg(Theme::global().HEADER_BG).text_color(Theme::global().TEXT))
+                                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _, window, cx| {
+                                            this.input.update(cx, |input, cx| input.set_content(prompt.to_owned(), cx));
+                                            window.focus(&this.input.read(cx).focus_handle(cx), cx);
+                                            cx.notify();
+                                        }))
+                                        .child(label)
+                                }))
+                        )),
                 )
                 .into_any_element()
         } else if row_count == 0 {
@@ -5169,7 +5205,7 @@ impl Render for Panel {
                     .child(label)
             }))
             .children(publish_tracker)
-            .children(pinned_todo.map(|payload| {
+            .children(pinned_todo.as_ref().filter(|_| !wide_plan).map(|payload| {
                 div()
                     .id("pinned-todo-scroll")
                     .debug_selector(|| "pinned-todo-card".into())
@@ -5406,6 +5442,96 @@ impl Render for Panel {
             .children(self.render_login_picker(window, cx))
             .into_any_element();
 
+        // On a wide window, the plan is an inspector beside the chat instead
+        // of a banner above the transcript. The composer remains in chat.
+        if wide_plan {
+            if let Some(payload) = pinned_todo.as_ref() {
+                let light_pane = theme.PANEL_BG.r + theme.PANEL_BG.g + theme.PANEL_BG.b > 1.5;
+                let background: Vec<_> = self.items.iter().filter_map(|item| {
+                    if let Item::BackgroundTask { label, done, .. } = item {
+                        Some((label.clone(), *done))
+                    } else {
+                        None
+                    }
+                }).collect();
+                return div()
+                    .size_full()
+                    .flex()
+                    .overflow_hidden()
+                    .child(div().flex_1().min_w_0().h_full().child(chat))
+                    .child(
+                        div()
+                            .id("pinned-todo-scroll")
+                            .debug_selector(|| "pinned-todo-card".into())
+                            .flex_none()
+                            .w(px(365.))
+                            .h_full()
+                            .overflow_y_scroll()
+                            .border_l_1()
+                            .border_color(theme.PANEL_BORDER)
+                            .bg(if light_pane { theme.HEADER_BG } else { theme.PANEL_BG })
+                            .child(
+                                div()
+                                    .h(px(48.))
+                                    .px_2()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .border_b_1()
+                                    .border_color(theme.PANEL_BORDER)
+                                    .text_size(px(12.))
+                                    .font_family(theme.FONT_UI)
+                                    .child(
+                                        div()
+                                            .px_3()
+                                            .py_1()
+                                            .rounded(px(9.))
+                                            .bg(if light_pane { theme.PANEL_BG } else { theme.USER_BG })
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(theme.TEXT)
+                                            .child("☷  Plan"),
+                                    )
+                                    .child(div().px_2().text_color(theme.TEXT_DIM).child("Changes")),
+                            )
+                            .child(div().h(px(10.)))
+                            .child(render_todo_card_with_style(
+                                payload,
+                                true,
+                                "pinned-todo",
+                                &self.transcript_selection,
+                                window,
+                                cx,
+                            ))
+                            .when(!background.is_empty(), |pane| {
+                                pane.child(
+                                    div()
+                                        .mt_4()
+                                        .px_2()
+                                        .text_size(px(13.))
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(theme.TEXT)
+                                        .child("Background"),
+                                )
+                                .children(background.into_iter().map(|(label, done)| {
+                                    div()
+                                        .mt_1()
+                                        .px_3()
+                                        .py_2()
+                                        .rounded(px(10.))
+                                        .bg(theme.PANEL_BG)
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .text_size(px(12.))
+                                        .text_color(theme.TEXT_DIM)
+                                        .child(if done { "✓" } else { "◌" })
+                                        .child(div().min_w_0().truncate().font_family(theme.FONT_MONO).child(label))
+                                }))
+                            }),
+                    )
+                    .into_any_element();
+            }
+        }
         // Inline mode retains the existing chat layout and event ancestry.
         if !self.image_pane_open {
             return chat;
@@ -5911,20 +6037,20 @@ fn render_todo_marker(todo: &TodoCardItem, id: String) -> impl IntoElement {
             marker.debug_selector(|| "todo-row-confidence".into())
         })
         .flex_none()
-        .w(px(11.0))
-        .h(px(11.0))
+        .w(px(18.0))
+        .h(px(18.0))
         .rounded_full()
-        .border_1()
-        .border_color(color)
-        .p(px(2.0))
+        .bg(if todo.status == "completed" { Theme::global().OK.opacity(0.2) } else if todo.status == "in_progress" { Theme::global().ACCENT_DIM } else { Theme::global().TOOL_BG })
+        .when(todo.status == "pending", |marker| marker.border_1().border_color(Theme::global().PANEL_BORDER))
+        .flex()
+        .items_center()
+        .justify_center()
         .when(todo.status == "completed", |marker| {
-            marker.child(div().size_full().rounded_full().bg(color))
+            marker.child(div().text_size(px(12.)).font_weight(FontWeight::BOLD).text_color(color).child("✓"))
         })
         .when(todo.status == "in_progress", |marker| {
             let dot = if confidence.is_some() { color } else { Theme::global().ACCENT };
-            marker
-                .p(px(2.5))
-                .child(div().size_full().rounded_full().bg(dot))
+            marker.child(div().size(px(6.)).rounded_full().bg(dot))
         })
         .when_some(label, |marker, label| {
             let tip = format!("Confidence: {label}");
@@ -6184,7 +6310,7 @@ fn render_todo_card_with_style(
             // text child receives space instead of collapsing to zero width.
             // Section labels read as quiet sentence-case captions, not
             // all-caps headings.
-            let mut section = div().flex().flex_col().w_full().gap(px(1.0));
+            let mut section = div().flex().flex_col().w_full().gap(px(2.0));
             let has_any_group = payload.todos.iter().any(|todo| todo.group.is_some());
             if group.is_some() || has_any_group {
                 section = section.child(
@@ -6220,7 +6346,7 @@ fn render_todo_card_with_style(
                         ),
                 );
             }
-            if let Some(goal) = todo_goal_for_group(&payload.goals, group) {
+            if !pinned && let Some(goal) = todo_goal_for_group(&payload.goals, group) {
                 section = section.child(render_todo_gate_row(goal));
             }
             for (todo_index, todo) in todos.into_iter().enumerate() {
@@ -6231,7 +6357,11 @@ fn render_todo_card_with_style(
                         .w_full()
                         .items_center()
                         .gap_2()
-                        .h(px(22.0))
+                        .min_h(px(32.0))
+                        .px_2()
+                        .py_1()
+                        .rounded(px(9.0))
+                        .when(todo.status == "in_progress", |row| row.bg(Theme::global().ACCENT_DIM))
                         .child(render_todo_marker(
                             todo,
                             format!("{key}-marker-{group_index}-{todo_index}"),
@@ -6250,13 +6380,25 @@ fn render_todo_card_with_style(
                                     _ if pinned => Theme::global().TEXT_USER,
                                     _ => Theme::global().TEXT,
                                 })
+                                .relative()
                                 .child(text_selection::plain(
                                     selection.clone(),
                                     format!("{key}-task-{group_index}-{todo_index}"),
                                     todo.content.clone(),
                                     window,
                                     cx,
-                                )),
+                                ))
+                                .when(todo.status == "completed", |text| {
+                                    text.child(
+                                        div()
+                                            .absolute()
+                                            .top(px(9.))
+                                            .left_0()
+                                            .w(px((todo.content.chars().count() as f32 * 6.2).min(280.)))
+                                            .h(px(1.))
+                                            .bg(Theme::global().PANEL_BORDER),
+                                    )
+                                }),
                         ),
                 );
             }
@@ -6269,18 +6411,24 @@ fn render_todo_card_with_style(
             .debug_selector(|| "pinned-todo-details-paper".into())
             .flex()
             .flex_col()
-            .gap_1()
-            .rounded(px(14.0))
-            .bg(Theme::global().prompt_background(0))
-            .px_3()
-            .py_2()
+            .gap_2()
+            .rounded(px(16.0))
+            .px_2()
+            .py_3()
             .child(
                 div()
                     .debug_selector(|| "pinned-todo-intent-row".into())
                     .flex()
                     .items_center()
-                    .gap_1()
-                    .text_size(px(12.5))
+                    .gap_2()
+                    .text_size(px(13.0))
+                    .child(
+                        div()
+                            .id("pinned-plan-title")
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(Theme::global().TEXT)
+                            .child("Plan"),
+                    )
                     .when_some(payload.plan.understands_user_intent, |line, state| {
                         // Mirror the TUI: "Intent clear: <intention>".
                         line.child(
@@ -6288,6 +6436,9 @@ fn render_todo_card_with_style(
                                 .debug_selector(|| "pinned-todo-intent-state".into())
                                 .flex_none()
                                 .flex()
+                                .invisible()
+                                .w(px(0.))
+                                .overflow_hidden()
                                 .child(
                                     div()
                                         .text_color(Theme::global().TEXT_DIM)
@@ -6314,6 +6465,7 @@ fn render_todo_card_with_style(
                             .whitespace_nowrap()
                             .text_ellipsis()
                             .text_color(Theme::global().TEXT_USER)
+                            .invisible()
                             .when_some(intention, |line, intention| {
                                 line.child(text_selection::plain(
                                     selection.clone(),
@@ -6338,9 +6490,17 @@ fn render_todo_card_with_style(
                                     .iter()
                                     .filter(|todo| todo.status != "cancelled")
                                     .count();
-                                format!("{completed}/{active}")
+                                format!("{completed} of {active}")
                             }),
                     ),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(5.))
+                    .rounded_full()
+                    .bg(Theme::global().USER_BG)
+                    .child(div().h_full().w(relative(progress)).rounded_full().bg(Theme::global().ACCENT)),
             )
             .child(body)
             .into_any_element();
@@ -8115,21 +8275,15 @@ mod tests {
                 vcx.debug_bounds("tool-row-running").is_some(),
                 !done && !failed
             );
-            for selector in ["tool-identity-pill", "tool-summary"] {
-                let text = vcx.debug_bounds(selector).expect("tool label paints");
-                assert_eq!(
-                    text.size.height, button.size.height,
-                    "{selector} fills the pill height"
-                );
-                assert_eq!(
-                    text.origin.y, button.origin.y,
-                    "{selector} aligns with the pill"
-                );
-            }
+            let summary = vcx.debug_bounds("tool-summary").expect("tool summary paints");
+            assert_eq!(summary.size.height, px(20.), "thread label uses a readable line");
+            assert!((f32::from(summary.center().y - button.center().y)).abs() < 1.);
             let pill = vcx.debug_bounds("tool-identity-pill").unwrap();
+            assert_eq!(pill.size.height, px(27.), "the thread node sets row height");
+            assert!((f32::from(pill.center().y - button.center().y)).abs() < 1.);
             let name = vcx.debug_bounds("tool-name").unwrap();
             let glyph = vcx.debug_bounds("tool-type-icon").unwrap();
-            assert!(pill.left() < glyph.left() && name.right() < pill.right());
+            assert!(pill.left() < glyph.left() && name.right() <= pill.right());
             assert!(glyph.right() < name.left());
             assert!((f32::from(glyph.center().y - name.center().y)).abs() < 1.0);
             vcx.simulate_click(pill.center(), gpui::Modifiers::default());
@@ -8507,7 +8661,7 @@ mod tests {
             "adjacent tools use 2px padding instead of the 10px message boundary"
         );
         let header = vcx.debug_bounds("tool-header").expect("tool header");
-        assert!(header.size.height <= px(24.0), "tool header stays compact");
+        assert!(header.size.height <= px(31.0), "27px thread node stays compact");
     }
 
     /// Inline tools must retain their intrinsic row height when enough of them
@@ -8818,10 +8972,11 @@ mod tests {
             .expect("identity tabs paint");
         let status = vcx.debug_bounds("panel-status").expect("status paints");
         let input = vcx.debug_bounds("prompt-input").expect("input paints");
-        // Identity pills and status share one row directly below the input.
+        // Identity pills live in the card, while status belongs to its
+        // quiet metadata line below the card.
         assert!(identity.top() >= input.bottom());
-        assert!((f32::from(identity.center().y - bounds.center().y)).abs() < 1.);
-        assert!(identity.right() <= bounds.left() + gpui::px(1.));
+        assert!(identity.bottom() <= bounds.top() + gpui::px(1.));
+        assert!(identity.right() <= vcx.debug_bounds("composer-tabs").unwrap().right());
         assert!(status.right() <= bounds.right());
         assert!(vcx.debug_bounds("panel-status-pulse").is_none());
     }
@@ -9559,7 +9714,10 @@ Goals:
             "a visible transcript prompt must not be duplicated above the todo card"
         );
         let transcript = vcx.debug_bounds("transcript").expect("transcript paints");
-        assert!(pinned.bottom() <= transcript.top());
+        assert!(
+            pinned.bottom() <= transcript.top() || pinned.left() >= transcript.right(),
+            "the plan belongs above or beside the transcript"
+        );
         assert!(vcx.debug_bounds("tool-inline").is_none());
         assert!(
             vcx.debug_bounds("todo-card").is_none(),

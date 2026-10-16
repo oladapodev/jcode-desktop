@@ -5,10 +5,10 @@ use std::{cell::Cell, rc::Rc};
 // the card top, not the row top and not the disappearance of its bottom.
 pub(super) const PROMPT_TOP_PADDING: f32 = 10.;
 const COLLAPSED_PROMPT_LINES: usize = 6;
-/// Bubble padding around the prompt text (prototype UserMsg: 10px x 14px).
-const PROMPT_PAD_X: f32 = 14.;
+/// Bubble padding around the prompt text (prototype UserMsg: 10px x 16px).
+const PROMPT_PAD_X: f32 = 16.;
 const PROMPT_PAD_Y: f32 = 10.;
-const COLLAPSED_PROMPT_MAX_HEIGHT: f32 = 140.;
+const COLLAPSED_PROMPT_MAX_HEIGHT: f32 = 144.;
 
 /// Bound both long pasted paragraphs and newline-heavy snippets. Return a
 /// source prefix, never alter the actual prompt sent to the harness or stored.
@@ -211,9 +211,12 @@ impl Panel {
             // same colour and sits inside this padding, so it blends in.
             .px(px(PROMPT_PAD_X))
             .py(px(PROMPT_PAD_Y))
-            .rounded(px(16.))
+            .rounded(px(20.))
+            .rounded_br(px(6.))
             .bg(background)
-            .text_size(px(13.5))
+            .font_family(Theme::global().FONT_UI)
+            .text_size(px(15.))
+            .line_height(relative(1.6))
             .text_color(Theme::global().TEXT_USER)
             .child(
                 div()
@@ -312,6 +315,7 @@ impl Panel {
             .flex_none()
             .w_full()
             .min_w_0()
+            .justify_end()
             .items_start()
             .relative()
             .left(px(offset))
@@ -388,7 +392,7 @@ impl Panel {
                 })
                 .occlude()
                 .px_3()
-                .text_size(px(13.5))
+                .text_size(px(15.))
                 .child(
                     div()
                         .w_full()
@@ -606,7 +610,7 @@ mod tests {
             vcx.run_until_parked();
             // The clip box adds 4px of fill padding above and below the text.
             let content = vcx.debug_bounds("prompt-content-0").unwrap();
-            let line_height = 13.5 * 1.55;
+            let line_height = 15. * 1.6;
             let lines = (f32::from(content.size.height) - 8.) / line_height;
             assert!(
                 (lines - lines.round()).abs() < 0.05,

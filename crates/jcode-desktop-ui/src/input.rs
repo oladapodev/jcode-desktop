@@ -1915,7 +1915,7 @@ impl Element for TextElement {
                     text = full.clone();
                 }
             }
-            (text, to_hsla(Theme::global().TEXT_DIM))
+            (text, to_hsla(Theme::global().TEXT_FAINT))
         } else {
             (content, style.color)
         };
@@ -2493,7 +2493,9 @@ impl Render for PromptInput {
                     .flex()
                     .items_start()
                     .px_4()
-                    .py_2()
+                    .pt(px(14.))
+                    .pb(px(12.))
+                    .min_h(px(54.))
                     .text_size(px(14.0))
                     .when(spacious, |el| {
                         // One line of 16px text plus padding.

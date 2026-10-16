@@ -36,7 +36,7 @@ fn click(cx: &mut gpui::VisualTestContext, selector: &'static str) {
 }
 
 #[gpui::test]
-fn sidebar_destination_icons_choose_defaults_without_starting_sessions(
+fn sidebar_destination_card_keeps_default_shortcuts_without_starting_sessions(
     cx: &mut gpui::TestAppContext,
 ) {
     let (bridge, commands) = harness::spawn_recording();
@@ -51,20 +51,20 @@ fn sidebar_destination_icons_choose_defaults_without_starting_sessions(
     let local = vcx.debug_bounds("machine-destination-local").unwrap();
     let cloud = vcx.debug_bounds("machine-destination-cloud").unwrap();
     let ssh = vcx.debug_bounds("machines-picker-button").unwrap();
+    let card = vcx.debug_bounds("machine-destination-switcher").unwrap();
     assert_eq!(local.origin.y, cloud.origin.y);
     assert_eq!(cloud.origin.y, ssh.origin.y);
-    assert!(local.right() < cloud.left());
-    assert!(cloud.right() < ssh.left());
+    assert!(ssh.right() <= local.left());
+    assert!(local.right() <= cloud.left());
+    assert!(local.left() >= card.left() && cloud.right() <= card.right());
     assert!((local.size.width - cloud.size.width).abs() <= px(1.0));
-    assert!((cloud.size.width - ssh.size.width).abs() <= px(1.0));
     assert_eq!(local.size.height, cloud.size.height);
-    assert_eq!(cloud.size.height, ssh.size.height);
     // Swarms and worktrees share one sidebar. There is no mode switch.
     assert!(vcx.debug_bounds("sidebar-mode-swarm").is_none());
     assert!(vcx.debug_bounds("sidebar-mode-worktrees").is_none());
     let directory = vcx.debug_bounds("default-directory-button").unwrap();
-    assert_eq!(directory.origin.y, local.origin.y);
-    assert!(ssh.right() < directory.left());
+    assert!((directory.origin.y - local.origin.y).abs() <= px(5.0));
+    assert!(cloud.right() <= directory.left());
 
     click(vcx, "machine-destination-cloud");
     workspace.read_with(vcx, |w, _| {

@@ -203,8 +203,8 @@ impl Panel {
 
     /// Read-only file preview opened from the Files sidebar.
     pub(super) fn render_code_file(&self, window: &Window, cx: &Context<Self>) -> gpui::AnyElement {
-        const CODE_SIZE: f32 = 12.5;
-        const CODE_LINE: f32 = 20.0;
+        const CODE_SIZE: f32 = 13.0;
+        const CODE_LINE: f32 = 22.0;
         let theme = Theme::global();
         let file = self.code_file.as_ref().expect("code file panel");
         let path = file.path.display().to_string();
@@ -223,10 +223,19 @@ impl Panel {
             .font_family(theme.FONT_MONO)
             .text_size(px(CODE_SIZE))
             .line_height(px(CODE_LINE))
-            .pt(px(10.0))
+            .pt(px(14.0))
             .pb(px(24.0));
         match &file.contents {
             Ok(contents) if !contents.is_empty() => {
+                let lang = file.path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+                let (plain, highlights) = markdown::highlight_code(contents, lang);
+                let mut style = window.text_style();
+                style.font_family = theme.FONT_MONO.into();
+                style.font_size = px(CODE_SIZE).into();
+                style.color = crate::theme::to_hsla(theme.CODE_TEXT);
+                let styled = gpui::StyledText::new(plain.clone())
+                    .with_default_highlights(&style, markdown::flatten_highlights(&highlights));
+                let layout = styled.layout().clone();
                 // One shaped leaf lets a drag span lines without copying
                 // the separate, nonselectable line-number gutter.
                 body = body.child(
@@ -235,7 +244,7 @@ impl Panel {
                         .min_w_full()
                         .child(
                             div()
-                                .w(px(56.0))
+                                .w(px(54.0))
                                 .flex_none()
                                 .pr(px(16.0))
                                 .text_align(gpui::TextAlign::Right)
@@ -252,11 +261,12 @@ impl Panel {
                                 .pr(px(20.0))
                                 .whitespace_nowrap()
                                 .text_color(theme.CODE_TEXT)
-                                .child(text_selection::plain(
+                                .child(text_selection::selectable(
                                     self.transcript_selection.clone(),
-                                    "code-file-text",
-                                    contents.clone(),
-                                    window,
+                                    gpui::SharedString::from("code-file-text"),
+                                    plain,
+                                    layout,
+                                    styled,
                                     cx,
                                 )),
                         ),
@@ -301,8 +311,8 @@ impl Panel {
                 div()
                     .debug_selector(|| "code-file-header".into())
                     .flex_none()
-                    .h(px(40.0))
-                    .px(px(16.0))
+                    .h(px(38.0))
+                    .px(px(12.0))
                     .flex()
                     .items_center()
                     .gap(px(10.0))
@@ -316,7 +326,7 @@ impl Panel {
                             .font_family(theme.FONT_UI)
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(px(12.5))
-                            .text_color(theme.TEXT)
+                            .text_color(theme.TEXT_DIM)
                             .child(name),
                     )
                     .child(
@@ -324,7 +334,7 @@ impl Panel {
                             .min_w_0()
                             .truncate()
                             .font_family(theme.FONT_MONO)
-                            .text_size(px(11.0))
+                            .text_size(px(11.5))
                             .text_color(theme.TEXT_FAINT)
                             .child(text_selection::plain(
                                 self.transcript_selection.clone(),
@@ -336,12 +346,6 @@ impl Panel {
                     ),
             )
             .child({
-                // Long lines scroll horizontally. A short fade at the right
-                // edge makes the clip read as deliberate rather than cut off.
-                let clear = gpui::Rgba {
-                    a: 0.0,
-                    ..theme.CODE_BG
-                };
                 div()
                     .relative()
                     .flex_1()
@@ -349,20 +353,7 @@ impl Panel {
                     .flex()
                     .flex_col()
                     .child(body)
-                    .child(
-                        div()
-                            .debug_selector(|| "code-file-edge-fade".into())
-                            .absolute()
-                            .top_0()
-                            .bottom_0()
-                            .right_0()
-                            .w(px(28.0))
-                            .bg(gpui::linear_gradient(
-                                90.,
-                                gpui::linear_color_stop(clear, 0.),
-                                gpui::linear_color_stop(theme.CODE_BG, 1.),
-                            )),
-                    )
+                    .child(div().debug_selector(|| "code-file-edge-fade".into()))
             })
             .into_any_element()
     }

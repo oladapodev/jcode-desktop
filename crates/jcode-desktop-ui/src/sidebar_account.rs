@@ -119,13 +119,13 @@ impl Workspace {
             .id("sidebar-account-area")
             .flex_none()
             .px_2()
-            .pt_1()
+            .pt(px(6.0))
             .pb_2()
             .border_t_1()
             .border_color(theme.PANEL_BORDER)
             .flex()
             .flex_col()
-            .gap_1()
+            .gap(px(4.0))
             .when(menu_open, |el| {
                 el.on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_account_menu(cx)))
                     .child(self.render_account_menu(cx))
@@ -134,9 +134,9 @@ impl Workspace {
                 div()
                     .id("sidebar-account")
                     .debug_selector(|| "sidebar-account".into())
-                    .h(px(42.0))
+                    .h(px(44.0))
                     .pl(px(8.0))
-                    .pr_3()
+                    .pr(px(8.0))
                     .flex()
                     .items_center()
                     .gap(px(10.0))
@@ -204,7 +204,7 @@ impl Workspace {
                                     .line_height(px(16.0))
                                     .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(ink)
-                                    .child(account.title(show_email)),
+                                    .child(if signed_in { "Jcode account".to_string() } else { account.title(show_email) }),
                             )
                             .child(
                                 div()
@@ -213,9 +213,19 @@ impl Workspace {
                                     .text_size(px(11.0))
                                     .line_height(px(14.0))
                                     .text_color(theme.TEXT_DIM)
-                                    .child(account.detail()),
+                                    .child(if show_email {
+                                        account.email.clone().unwrap_or_else(|| account.detail())
+                                    } else {
+                                        account.detail()
+                                    }),
                             ),
-                    ),
+                    )
+                    .children(account.plan.map(|plan| {
+                        div().flex_none().px(px(8.0)).h(px(21.0))
+                            .flex().items_center().rounded_full().bg(theme.PANEL_BG)
+                            .font_family(theme.FONT_UI).text_size(px(10.5))
+                            .text_color(theme.TEXT_DIM).child(plan)
+                    })),
             )
             .into_any_element()
     }

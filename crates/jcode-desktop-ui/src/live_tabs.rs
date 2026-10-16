@@ -6,7 +6,10 @@ use crate::panel::folder_session_title;
 const TAB_FLOAT_GAP: f32 = 4.0;
 const TAB_GAP: f32 = 6.0;
 const TAB_HEIGHT: f32 = FOLDER_CONTENT_INSET - TAB_FLOAT_GAP;
-pub(super) const TAB_STATUS_WIDTH: f32 = 104.0;
+pub(super) const TAB_STATUS_WIDTH: f32 = 236.0;
+const TAB_MACHINE_WIDTH: f32 = 138.0;
+pub(super) const HEADER_WIDE_BREAKPOINT: f32 = 900.0;
+const LAPTOP_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="12" rx="1.5"/><path d="M2 19h20l-2-3H4z"/></g></svg>"#;
 /// Compact windows swap the connection status for a sidebar menu button.
 const TAB_MENU_WIDTH: f32 = 36.0;
 const TAB_NEW_WIDTH: f32 = 40.0;
@@ -541,17 +544,22 @@ impl Workspace {
         };
         // Session navigation takes priority over secondary build metadata.
         // Keep enough room for a useful selected tab before showing the chip.
+        let wide_header = !menu_button && canvas_width >= HEADER_WIDE_BREAKPOINT;
+        let machine_width = if wide_header { TAB_MACHINE_WIDTH } else { 0.0 };
         let status_width = if menu_button {
             TAB_MENU_WIDTH
-        } else {
+        } else if wide_header {
             TAB_STATUS_WIDTH
+        } else {
+            104.0
         };
         let tab_budget = canvas_width
             - right
             - status_width
             - TAB_NEW_WIDTH
             - TAB_NEXT_WORKSPACE_WIDTH
-            - TAB_CLOSE_WIDTH;
+            - TAB_CLOSE_WIDTH
+            - machine_width;
         let version_width = version_header_width(tab_budget);
         let can_rename = self.rename_target(cx).is_some();
         let mut entries = Vec::new();
@@ -582,6 +590,7 @@ impl Workspace {
             - TAB_NEW_WIDTH
             - TAB_NEXT_WORKSPACE_WIDTH
             - TAB_CLOSE_WIDTH
+            - machine_width
             - version_width)
             .max(0.0);
         let rows: Vec<_> = entries.iter().map(|(_, row, _)| *row).collect();
@@ -650,7 +659,8 @@ impl Workspace {
             .left(px(version_width + status_width))
             .right(px(TAB_NEW_WIDTH
                 + TAB_NEXT_WORKSPACE_WIDTH
-                + TAB_CLOSE_WIDTH))
+                + TAB_CLOSE_WIDTH
+                + machine_width))
             .h(px(FOLDER_CONTENT_INSET));
         self.live_tabs.header_offset = version_width + status_width;
         self.live_tabs.version_width = version_width;
@@ -824,7 +834,7 @@ impl Workspace {
                     .h(px(current.height))
                     .flex()
                     .items_center()
-                    .rounded(px(8.0))
+                    .rounded_full()
                     .bg(if popped { hover_bg } else { tab_bg })
                     .font_family(theme.FONT_UI)
                     .text_size(px(12.5))
@@ -888,7 +898,7 @@ impl Workspace {
             if row_position != 0 {
                 continue;
             }
-            let accent = Theme::global().workspace_accent(row);
+            let accent = Theme::global().TEXT_DIM;
             let active = row == self.active_row;
             tabs = tabs.child(
                 div()
@@ -920,7 +930,7 @@ impl Workspace {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(6.0))
+                            .rounded_full()
                             .text_center()
                             .when(active, |el| el.bg(accent.opacity(0.16)))
                             .child(format!("{}", row + 1)),
@@ -942,6 +952,22 @@ impl Workspace {
         }
         let connected = self.connected;
         let status_label = if connected { "Connected" } else { "Offline" };
+        let active_panel = self.slots.get(self.active).map(|slot| slot.panel.read(cx));
+        let active_title = active_panel.as_ref().map(|panel| {
+            folder_session_title(&panel.session_id, panel.title.as_ref())
+        }).unwrap_or_else(|| "Empty workspace".into());
+        let active_id = active_panel.as_ref().map(|panel| panel.session_id.as_str());
+        let session = self.sessions.iter().find(|session| Some(session.session_id.as_str()) == active_id);
+        let project = session.map(|session| self.sidebar_projects.project(session).0.label)
+            .or_else(|| active_panel.as_ref().and_then(|panel| panel.working_dir.as_deref())
+                .and_then(|dir| std::path::Path::new(dir).file_name())
+                .map(|name| name.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "Workspace".into());
+        let branch = session.and_then(|session| self.sidebar_projects.checkout(session))
+            .map(|checkout| checkout.branch);
+        let agents = active_id.map(|id| self.sessions.iter().filter(|session| session.parent_session_id.as_deref() == Some(id)).count()).unwrap_or(0);
+        let active_working = active_panel.as_ref().and_then(|panel| panel.tab_ring()).is_some_and(|ring| ring.working());
+        let active_color = if active_working { theme.ACCENT } else { theme.OK };
         div()
             .debug_selector(|| "workspace-tab-row".into())
             .absolute()
@@ -955,55 +981,85 @@ impl Workspace {
                 } else {
                     el.child(
                         div()
-                            .debug_selector(|| "header-status-slot".into())
+                            .debug_selector(|| "header-title-slot".into())
                             .absolute()
                             .left(px(version_width))
                             .top_0()
-                            .w(px(TAB_STATUS_WIDTH))
+                            .w(px(status_width))
                             .h(px(TAB_HEIGHT))
                             .flex()
                             .items_center()
                             .pl_1()
                             .overflow_hidden()
-                            .child(
-                                // Connection state; the build lives in its tooltip and
-                                // a click checks for updates.
-                                div()
-                                    .id("header-status")
+                            .when(!wide_header, |el| el.child(
+                                div().id("header-status")
                                     .debug_selector(|| "header-status".into())
-                                    .h(px(22.0))
-                                    .px(px(8.0))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(6.0))
-                                    .rounded(px(7.0))
-                                    .cursor_pointer()
-                                    .occlude()
-                                    .hover(|el| el.bg(Theme::global().PANEL_BG))
-                                    .font_family(Theme::global().FONT_UI)
-                                    .text_size(px(11.5))
-                                    .text_color(Theme::global().TEXT_DIM)
+                                    .h(px(22.0)).px(px(7.0)).flex().items_center().gap(px(6.0))
+                                    .rounded_full().font_family(theme.FONT_UI)
+                                    .text_size(px(11.5)).text_color(theme.TEXT_DIM)
+                                    .cursor_pointer().occlude()
                                     .tooltip(|_, cx| cx.new(|_| crate::build_info::BuildTooltip).into())
-                                    .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
-                                        cx.stop_propagation();
-                                        window.prevent_default();
-                                    })
                                     .on_click(cx.listener(|_, _, _, cx| {
-                                        cx.stop_propagation();
-                                        Self::check_and_apply_update();
-                                        cx.notify();
+                                        cx.stop_propagation(); Self::check_and_apply_update(); cx.notify();
                                     }))
-                                    .child(div().flex_none().size(px(6.0)).rounded_full().bg(if connected {
-                                        Theme::global().OK
-                                    } else {
-                                        Theme::global().WARN
-                                    }))
+                                    .child(div().size(px(6.0)).rounded_full().bg(if connected { theme.OK } else { theme.WARN }))
                                     .child(status_label),
-                            ),
+                            ))
+                            .when(wide_header, |el| el.child(
+                                div()
+                                    .debug_selector(|| "header-session-title".into())
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(1.0))
+                                    .font_family(theme.FONT_UI)
+                                    .child(div().flex().items_center().gap(px(7.0))
+                                        .child(div().max_w(px(190.0)).truncate().text_size(px(13.0))
+                                            .font_weight(gpui::FontWeight::MEDIUM).text_color(theme.TEXT)
+                                            .child(active_title.clone()))
+                                        .child(div().flex_none().size(px(6.0)).rounded_full().bg(active_color)))
+                                    .child(div().flex().items_center().gap(px(5.0)).text_size(px(11.0))
+                                        .text_color(theme.TEXT_FAINT)
+                                        .child(project.clone())
+                                        .when_some(branch.clone(), |el, branch| el.child("/").child(branch))
+                                        .when(agents > 0, |el| el.child("/")
+                                            .child(div().flex().items_center().gap(px(2.0))
+                                                .children((0..agents.min(4)).map(|_| div()
+                                                    .size(px(5.0)).rounded_full().bg(theme.ACCENT))))
+                                            .child(format!("{agents} agents"))),
+                            )))
                     )
                 }
             })
             .child(tabs)
+            .when(wide_header, |el| el.child(
+                div()
+                    .debug_selector(|| "header-status-slot".into())
+                    .absolute()
+                    .right(px(TAB_NEW_WIDTH + TAB_NEXT_WORKSPACE_WIDTH + TAB_CLOSE_WIDTH))
+                    .top_0()
+                    .w(px(machine_width))
+                    .h(px(TAB_HEIGHT))
+                    .flex().items_center().justify_center()
+                    .child(div().id("header-status")
+                        .debug_selector(|| "header-status".into())
+                        .h(px(28.0)).px(px(9.0)).flex().items_center().gap(px(6.0))
+                        .rounded_full().cursor_pointer().occlude()
+                        .hover(|el| el.bg(Theme::global().PANEL_BG))
+                        .font_family(theme.FONT_UI).text_size(px(11.5)).text_color(theme.TEXT_DIM)
+                        .tooltip(|_, cx| cx.new(|_| crate::build_info::BuildTooltip).into())
+                        .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
+                            cx.stop_propagation(); window.prevent_default();
+                        })
+                        .on_click(cx.listener(|_, _, _, cx| {
+                            cx.stop_propagation(); Self::check_and_apply_update(); cx.notify();
+                        }))
+                        .child(gpui::svg().data(LAPTOP_ICON)
+                            .size(px(14.0)).text_color(theme.TEXT_DIM)).child("This laptop")
+                        .child(div().flex_none().size(px(6.0)).rounded_full().bg(if connected {
+                            theme.OK
+                        } else { theme.WARN })),
+                    )
+            ))
             .when(version_width > 0.0, |el| {
                 el.child(self.render_version_header(version_width, cx))
             })

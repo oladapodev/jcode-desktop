@@ -937,8 +937,7 @@ impl Panel {
         // Idle, the button alternates between the microphone and its
         // shortcut instead of showing both side by side. While voice is
         // active, or with reduced motion, it holds the microphone.
-        let alternate =
-            !active && !cx.reduce_motion() && !crate::config::get().appearance.reduce_motion;
+        let alternate = false;
         let faces = if alternate {
             // The faces crossfade in their own small view, so each animation
             // frame redraws only this button. Notifying the panel would
@@ -977,8 +976,7 @@ impl Panel {
             .relative()
             .flex_none()
             .h(px(size))
-            .min_w(px(size))
-            .px(px(5.5))
+            .w(px(size))
             .rounded_full()
             .overflow_hidden()
             .flex()
@@ -988,7 +986,7 @@ impl Panel {
             .bg(if active {
                 theme.ACCENT
             } else {
-                theme.prompt_background(usize::MAX)
+                gpui::transparent_black().into()
             })
             .when(!active, |el| el.hover(|el| el.bg(theme.USER_BG)))
             .tooltip(move |_, cx| cx.new(|_| VoiceTooltip(tooltip_status.clone())).into())
@@ -1000,12 +998,6 @@ impl Panel {
                 window.dispatch_action(Box::new(ToggleVoice), cx);
                 cx.stop_propagation();
             }))
-            // Invisible keycap sizes the pill so both faces fit.
-            .child(
-                div()
-                    .invisible()
-                    .child(voice_shortcut_keycap(keycap_color.into(), &theme)),
-            )
             .child(faces);
         div()
             .flex_none()
@@ -1597,20 +1589,16 @@ mod tests {
                 });
                 vcx.run_until_parked();
                 let input = vcx.debug_bounds("prompt-input").unwrap();
+                let toolbar = vcx.debug_bounds("composer-tabs").unwrap();
                 let button = vcx.debug_bounds("voice-toggle").unwrap();
                 let icon = vcx.debug_bounds("voice-microphone-icon").unwrap();
                 let shortcut = vcx.debug_bounds("voice-shortcut").unwrap();
-                // The voice button sits inside the input box, at its right.
+                // The voice button sits at the right of the card's toolbar.
                 assert!(
-                    button.left() >= input.left()
-                        && button.right() <= input.right()
-                        && button.top() >= input.top()
-                        && button.bottom() <= input.bottom(),
-                    "voice at {width}: {button:?} outside {input:?}"
-                );
-                assert!(
-                    input.right() - button.right() < px(16.),
-                    "voice hugs the input's right edge"
+                    button.top() >= input.bottom()
+                        && button.top() >= toolbar.top()
+                        && button.bottom() <= toolbar.bottom(),
+                    "voice at {width}: {button:?} outside {toolbar:?}"
                 );
                 assert_eq!(button.size.height, px(VOICE_BUTTON_SIZE));
                 // Microphone and keybinding share one slot and alternate,

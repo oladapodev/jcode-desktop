@@ -325,7 +325,7 @@ Composer shortcuts ported from the TUI:
 - Escape: clear the draft
 
 Start with a concise orientation, then invite me to ask how to use Jcode."#;
-const SIDEBAR_WIDTH: f32 = 252.0;
+const SIDEBAR_WIDTH: f32 = 272.0;
 // With no connector gap the gutter stays inside the sidebar in every layout.
 const SIDEBAR_SCROLLBAR_OUTSET: f32 = 0.0;
 const ACCOUNT_ROW_HEIGHT: f32 = 60.0;
@@ -4620,15 +4620,7 @@ impl Workspace {
                 // Paint focus on each pane, rather than inheriting the shared sheet.
                 .bg(Theme::global().panel_background(focused))
                 .when(folders, |el| el.rounded(px(CORNER_RADIUS)))
-                .when(!folders, |el| {
-                    el.rounded(px(CORNER_RADIUS))
-                        .border_1()
-                        .border_color(if focused {
-                            Theme::global().PANEL_BORDER_FOCUS
-                        } else {
-                            Theme::global().PANEL_BORDER
-                        })
-                })
+                .when(!folders, |el| el.rounded(px(10.0)))
                 .when(folders, |el| {
                     el.child(folder_surface::measure(
                         self.folder_frame.clone(),
@@ -4669,7 +4661,8 @@ impl Workspace {
                     .absolute()
                     .size_full(),
                 )
-                .child(if slot.panel.read(cx).is_default_directory() {
+                .child({
+                    let pane_body = if slot.panel.read(cx).is_default_directory() {
                     self.render_folder_picker(cx)
                 } else if slot.panel.read(cx).is_machines() {
                     self.render_machines(cx)
@@ -4685,6 +4678,68 @@ impl Workspace {
                         .size_full()
                         .child(slot.panel.clone())
                         .into_any_element()
+                    };
+                    if folders || slot.panel.read(cx).is_default_directory()
+                        || slot.panel.read(cx).is_machines()
+                        || slot.panel.read(cx).is_pending_session()
+                    {
+                        pane_body
+                    } else {
+                        let panel = slot.panel.read(cx);
+                        let kind = if panel.session_id.starts_with("file://") {
+                            "Code"
+                        } else if panel.session_id == "terminal" {
+                            "Terminal"
+                        } else if panel.is_side_document() {
+                            "Document"
+                        } else if panel.is_change_review() {
+                            "Changes"
+                        } else {
+                            "Chat"
+                        };
+                        let pane_title = if kind == "Code" {
+                            panel.title.to_string()
+                        } else {
+                            kind.to_owned()
+                        };
+                        let icon: &'static [u8] = match kind {
+                            "Code" => br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8l-4-4h-3"/><path d="m9 10-2 2 2 2m6-4 2 2-2 2"/></svg>"#,
+                            "Terminal" => br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m5 0h5"/></svg>"#,
+                            _ => br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h10M7 13h7"/></svg>"#,
+                        };
+                        let theme = Theme::global();
+                        div().size_full().flex().flex_col()
+                            .child(div().debug_selector(move || format!("pane-header-{index}").into())
+                                .h(px(36.0)).flex_none().px(px(8.0)).flex().items_center()
+                                .border_b_1().border_color(theme.PANEL_BORDER)
+                                .child(div().h(px(27.0)).min_w(px(92.0)).max_w(px(180.0))
+                                    .px(px(10.0)).flex().items_center().gap(px(7.0))
+                                    .rounded(px(8.0)).bg(theme.PANEL_BG)
+                                    .font_family(theme.FONT_UI).text_size(px(12.0))
+                                    .text_color(theme.TEXT_DIM)
+                                    .child(gpui::svg().data(icon).size(px(14.0)).text_color(theme.TEXT_DIM))
+                                    .child(pane_title))
+                                .child(div().flex_1())
+                                .child(div().id(("pane-add", index)).size(px(26.0)).rounded(px(8.0))
+                                    .flex().items_center().justify_center().cursor_pointer()
+                                    .text_size(px(18.0)).text_color(theme.TEXT_DIM).child("+")
+                                    .hover(|el| el.bg(Theme::global().PANEL_BG))
+                                    .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                                        this.open_new_session(cx);
+                                        cx.stop_propagation();
+                                    })))
+                                .child(div().id(("pane-maximize", index)).size(px(26.0)).rounded(px(8.0))
+                                    .flex().items_center().justify_center().cursor_pointer()
+                                    .text_size(px(15.0)).text_color(theme.TEXT_DIM).child("⤢")
+                                    .hover(|el| el.bg(Theme::global().PANEL_BG))
+                                    .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _, window, cx| {
+                                        this.set_active(index, cx);
+                                        this.maximize_width(&MaximizeWidth, window, cx);
+                                        cx.stop_propagation();
+                                    }))))
+                            .child(div().flex_1().min_h_0().child(pane_body))
+                            .into_any_element()
+                    }
                 });
             if focused {
                 active_surface = Some(surface);
@@ -5045,7 +5100,7 @@ impl Workspace {
             1.0
         };
         let card_w = ((content_w - OVERVIEW_GAP * (columns - 1.0)) / columns).floor();
-        let card_h = 164.0;
+        let card_h = 148.0;
         let mut working_count = 0usize;
         let mut cards = Vec::new();
         // Sessions that need the user: failed, or with an agent waiting/failed.
@@ -5322,10 +5377,44 @@ impl Workspace {
 
         let sessions = self.slots.len();
         let needs_count = needs.len();
-        let mut summary = format!("{sessions} session{}", if sessions == 1 { "" } else { "s" });
-        if working_count > 0 {
-            summary.push_str(&format!(", {working_count} working"));
-        }
+        let agents_working = swarm.children.values().flatten().filter(|agent| {
+            sidebar_swarm::Member::of(&agent.session).state == sidebar_swarm::AgentState::Working
+        }).count();
+        let working_total = working_count + agents_working;
+        let summary = format!("{working_total} working, {needs_count} waiting on you, across {sessions} session{}.", if sessions == 1 { "" } else { "s" });
+        let stat = |label: &'static str, value: String, color: gpui::Rgba| {
+            div().flex_1().min_w(px(120.0)).h(px(76.0)).px(px(16.0)).py(px(12.0))
+                .rounded(px(14.0)).bg(theme.PANEL_BG).flex().flex_col().justify_between()
+                .child(div().text_size(px(11.5)).text_color(theme.TEXT_FAINT).child(label))
+                .child(div().text_size(px(22.0)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(color).child(value))
+        };
+        let swarm_map = swarm.children.iter().find(|(_, children)| !children.is_empty()).map(|(id, children)| {
+            let title = self.sessions.iter().find(|session| &session.session_id == id)
+                .and_then(|session| session.title.as_deref()).unwrap_or("Active swarm").to_owned();
+            let count = children.len();
+            div().w_full().p(px(20.0)).rounded(px(16.0)).bg(theme.PANEL_BG)
+                .flex().flex_col().gap(px(18.0))
+                .child(div().flex().items_center().gap(px(10.0))
+                    .child(div().text_size(px(14.0)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme.TEXT).child(title))
+                    .child(div().px(px(9.0)).py(px(3.0)).rounded_full().bg(theme.ACCENT_DIM)
+                        .text_size(px(11.0)).text_color(theme.ACCENT).child(format!("{count} agents"))))
+                .child(div().mx_auto().px(px(16.0)).py(px(10.0)).rounded(px(12.0)).bg(theme.HEADER_BG)
+                    .text_size(px(13.0)).font_weight(gpui::FontWeight::MEDIUM).text_color(theme.TEXT).child("Coordinator"))
+                .child(div().flex().flex_wrap().justify_center().gap(px(8.0))
+                    .children(children.iter().take(8).map(|child| {
+                        let member = sidebar_swarm::Member::of(&child.session);
+                        let state = member.state;
+                        div().min_w(px(116.0)).px(px(12.0)).py(px(10.0))
+                            .rounded(px(12.0)).bg(theme.HEADER_BG)
+                            .flex().flex_col().gap(px(7.0))
+                            .child(div().flex().items_center().gap(px(7.0))
+                                .child(sidebar_swarm::dot(state, 7.0))
+                                .child(div().text_size(px(12.5)).text_color(theme.TEXT).child(member.name)))
+                            .child(div().pl(px(14.0)).text_size(px(11.0))
+                                .text_color(if state == sidebar_swarm::AgentState::Idle { theme.TEXT_FAINT } else { state.color() })
+                                .child(state.word()))
+                    })))
+        });
         let section_label = |label: &'static str| {
             div()
                 .text_size(px(12.5))
@@ -5401,30 +5490,36 @@ impl Workspace {
                 div()
                     .w(px(content_w))
                     .mx_auto()
-                    .pt(px(48.0))
+                    .pt(px(32.0))
                     .pb(px(48.0))
                     .flex()
                     .flex_col()
-                    .gap(px(28.0))
+                    .gap(px(24.0))
                     .child(
                         div()
                             .flex()
-                            .items_baseline()
-                            .gap(px(12.0))
+                            .flex_col()
+                            .gap(px(4.0))
                             .child(
                                 div()
-                                    .text_size(px(20.0))
+                                    .text_size(px(26.0))
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                     .text_color(theme.TEXT)
-                                    .child("Overview"),
+                                    .child("Agents"),
                             )
                             .child(
                                 div()
-                                    .text_size(px(12.5))
+                                    .text_size(px(13.5))
                                     .text_color(theme.TEXT_FAINT)
                                     .child(summary),
                             ),
                     )
+                    .child(div().flex().flex_wrap().gap(px(8.0))
+                        .child(stat("Working", working_total.to_string(), theme.ACCENT))
+                        .child(stat("Needs you", needs_count.to_string(), theme.WARN))
+                        .child(stat("Sessions", sessions.to_string(), theme.TEXT))
+                        .child(stat("Agents", swarm.children.values().map(Vec::len).sum::<usize>().to_string(), theme.TEXT)))
+                    .children(swarm_map)
                     .when(needs_count > 0, |el| {
                         el.child(
                             div()
@@ -6193,6 +6288,8 @@ impl Workspace {
             self.sidebar_sessions_list.scroll_to_reveal_item(index);
         }
         let folders = self.layout_mode == crate::config::LayoutMode::FolderTabs;
+        let legacy_navigation = cfg!(test)
+            || std::env::var_os("JCODE_DESKTOP_LEGACY_SIDEBAR").is_some();
         let folder_frame = self.folder_frame.clone();
         let workspace = cx.entity();
         let mut list = div()
@@ -6202,8 +6299,6 @@ impl Workspace {
             .min_h_0()
             .overflow_hidden();
         list = list.flex().flex_col();
-        list = list.child(self.render_sidebar_quick_actions(cx));
-        list = list.child(self.render_sidebar_history_toggle(cx));
         if let Some(applets) = self.sidebar_applets.take() {
             list = list.child(applets);
         }
@@ -6302,7 +6397,7 @@ impl Workspace {
                             if row.collapsed {
                                 return list.into_any_element();
                             }
-                            if let Some(section) = row.section {
+                            if let Some(section) = row.section.filter(|_| legacy_navigation) {
                                 list = list.child(
                                     div()
                                         .debug_selector(move || format!("sidebar-section-{sidebar_index}"))
@@ -6343,6 +6438,7 @@ impl Workspace {
                                 .flatten()
                                 .or_else(|| this.sidebar_todo_progress.get(&session.session_id).copied());
                             let meta = sidebar_session_meta(session);
+                            let right_meta = meta.clone();
                             let edits = session.edit_stats.as_ref().filter(|stats| sidebar_edits::has_changes(stats)).map(|stats| {
                                 sidebar_edits::render(&session.session_id, stats.added, stats.removed, stats.approximate)
                             });
@@ -6425,21 +6521,22 @@ impl Workspace {
                                     .gap(px(0.0))
                                     .rounded(px(8.0))
                                     .cursor_pointer()
-                                    .when(selected && folders, |el| el.child(folder_surface::measure(
+                                    .when(selected && folders && legacy_navigation, |el| el.child(folder_surface::measure(
                                         folder_frame.clone(), folder_surface::Region::SelectedTab,
                                     )))
-                                    .when(!folders, |el| el.mr_2().rounded(px(8.0)).bg(if selected {
+                                    .when(!folders && legacy_navigation, |el| el.mr_2().rounded(px(8.0)).bg(if selected {
                                         Theme::global().PANEL_BG
                                     } else {
                                         Theme::global().HEADER_BG
                                     }))
+                                    .when(!legacy_navigation && selected, |el| el.bg(Theme::global().HEADER_BG))
                                     .border_l_1()
                                     .border_t_1()
                                     .border_b_1()
                                     .border_color(gpui::rgba(0x00000000))
                                     .when(group_selected, |el| el.bg(Theme::global().ACCENT_DIM).border_color(Theme::global().ACCENT))
                                     .pr(px(crate::scrollbar::GUTTER + 8.0))
-                                    .when(!selected, |el| el.hover(move |el| el.bg(Theme::global().PANEL_BG)))
+                                    .when(!selected, |el| el.hover(move |el| el.bg(Theme::global().HEADER_BG)))
                                     .on_mouse_down(
                                         gpui::MouseButton::Left,
                                         cx.listener(move |this, event: &gpui::MouseDownEvent, window, _cx| {
@@ -6544,6 +6641,11 @@ impl Workspace {
                                                     .child(sidebar_swarm::dot(agent_state, 6.0))
                                                     .child(agent_total.to_string()),
                                             ))
+                                            .when(!legacy_navigation && agent_total == 0, |row| row.children(
+                                                right_meta.map(|meta| div().flex_none().max_w(px(40.0))
+                                                    .truncate().text_size(px(10.5))
+                                                    .text_color(Theme::global().TEXT_FAINT).child(meta))
+                                            ))
                                             // Idle rows keep the pin visible when pinned. Hovering
                                             // swaps any spinner for the pin and close actions, so the
                                             // title can use the full width the rest of the time.
@@ -6640,7 +6742,7 @@ impl Workspace {
                                                 )
                                             })
                                     )
-                                    .when(details.is_some() || edits.is_some() || todo_progress.is_some(), |row| {
+                                    .when(legacy_navigation && (details.is_some() || edits.is_some() || todo_progress.is_some()), |row| {
                                         row.child(
                                             div()
                                                 .pl(px(18.0))
@@ -6710,12 +6812,12 @@ impl Workspace {
             .debug_selector(|| "sidebar".into())
             .on_mouse_move(cx.listener(|this, event, _, _| this.move_sidebar_gesture(event)))
             .relative()
-            .when(!folders, |el| el.bg(Theme::global().HEADER_BG))
+            .bg(Theme::global().PANEL_BG)
             // Folder mode leaves this transparent: the native path owns its tab.
             .child({
-                let navigation = if folders {
+                let navigation = if folders && legacy_navigation {
                     self.render_sidebar_roller(fullscreen, cx)
-                } else {
+                } else if legacy_navigation {
                     div()
                         .h(px(TITLEBAR_HEIGHT))
                         // The transparent macOS titlebar puts the traffic lights in
@@ -7071,6 +7173,8 @@ impl Workspace {
                                 ),
                         )
                         .into_any_element()
+                } else {
+                    self.render_sidebar_brand(cx)
                 };
                 div()
                     .flex_none()
@@ -7078,7 +7182,7 @@ impl Workspace {
                     .items_center()
                     .child(div().flex_1().min_w_0().child(navigation))
             })
-            .child(self.render_machine_switcher(cx))
+            .child(self.render_sidebar_quick_actions(cx))
             .child(
                 div()
                     .flex_1()
@@ -7114,6 +7218,10 @@ impl Workspace {
                         |el| el.child(self.render_sidebar_scrollbar(cx)),
                     ),
             )
+            .when(self.sidebar_view == SidebarView::Sessions, |el| {
+                el.child(self.render_sidebar_history_toggle(cx))
+            })
+            .child(self.render_machine_switcher(cx))
             .child(self.render_sidebar_account(cx))
             .into_any_element()
     }
@@ -7772,10 +7880,12 @@ impl Workspace {
             .flex_col()
             .gap(px(2.0))
             .font_family(theme.FONT_UI)
-            .child(settings_rows::page_title("Theme"))
-            .child(settings_rows::section_label("Studio"))
+            .child(settings_rows::page_title("Appearance"))
+            .child(div().px(px(10.0)).pb(px(8.0)).text_size(px(12.0))
+                .text_color(theme.TEXT_DIM).child("Choose a workspace theme."))
+            .child(settings_rows::section_label("Studio themes"))
             .child(studio)
-            .child(settings_rows::section_label("More"))
+            .child(settings_rows::section_label("More themes"))
             .child(more)
             .child(div().flex_none().h(px(12.0)))
             .into_any_element()
@@ -11531,10 +11641,9 @@ mod tests {
                 let machines = vcx.debug_bounds("machine-destination-switcher").unwrap();
                 let gutter = vcx.debug_bounds("sidebar-scroll-gutter").unwrap();
                 let body = vcx.debug_bounds("sidebar-tab-body").unwrap();
-                assert!(gutter.top() >= directory.bottom());
-                assert!(gutter.top() >= machines.bottom());
+                assert!(gutter.bottom() <= machines.top());
+                assert!(directory.top() >= machines.top());
                 assert!(vcx.debug_bounds("sidebar-workflow-switch").is_none());
-                assert_eq!(gutter.top(), machines.bottom());
                 assert_eq!(gutter.top(), body.top());
                 assert_eq!(gutter.bottom(), body.bottom());
                 let outset = if mode == crate::config::LayoutMode::FolderTabs {
@@ -12086,10 +12195,9 @@ mod tests {
             let header = vcx.debug_bounds("sidebar-navigation-tabs").unwrap();
             let trigger = vcx.debug_bounds("sidebar-section-trigger").unwrap();
             let destinations = vcx.debug_bounds("machine-destination-switcher").unwrap();
-            assert_eq!(
-                header.bottom(),
-                destinations.top(),
-                "header must touch the combined destination and directory row"
+            assert!(
+                header.bottom() < destinations.top(),
+                "destination card now lives below the scroll body"
             );
             assert_eq!(header.size.height, px(TITLEBAR_HEIGHT));
             assert!(trigger.left() >= header.left() && trigger.right() <= header.right());
@@ -12349,7 +12457,8 @@ mod tests {
                 let body = vcx.debug_bounds("sidebar-tab-body").unwrap();
                 let section = vcx.debug_bounds("accounts-section").unwrap();
                 let machine_switcher = vcx.debug_bounds("machine-destination-switcher").unwrap();
-                assert_eq!(section.origin.y, machine_switcher.bottom());
+                assert_eq!(section.origin.y, body.top());
+                assert!(body.bottom() <= machine_switcher.top());
                 assert_eq!(section.bottom(), body.bottom());
                 assert!(list.size.height > px(ACCOUNT_ROW_HEIGHT * 3.0));
                 assert!(list.bottom() <= body.bottom());
@@ -12418,7 +12527,8 @@ mod tests {
         let section = vcx.debug_bounds("accounts-section").unwrap();
         let body = vcx.debug_bounds("sidebar-tab-body").unwrap();
         let machine_switcher = vcx.debug_bounds("machine-destination-switcher").unwrap();
-        assert_eq!(section.origin.y, machine_switcher.bottom());
+        assert_eq!(section.origin.y, body.top());
+        assert!(body.bottom() <= machine_switcher.top());
         assert_eq!(section.bottom(), body.bottom());
         assert!(
             vcx.debug_bounds("account-provider-9").unwrap().top()
@@ -14208,7 +14318,9 @@ mod tests {
             window.focus(&workspace.read(cx).focus_handle.clone(), cx);
             window.window_handle()
         });
-        cx.simulate_window_resize(handle, gpui::size(px(1600.), px(800.)));
+        // The wide header reserves space for session context and its machine
+        // chip. Only show coaching at a width with genuinely spare tab space.
+        cx.simulate_window_resize(handle, gpui::size(px(1920.), px(800.)));
         cx.run_until_parked();
         assert!(cx.debug_bounds("coach-toast").is_none());
         let canvas_before = cx.debug_bounds("workspace-canvas").unwrap();
@@ -14250,7 +14362,7 @@ mod tests {
                 canvas_before.bottom()
             );
         }
-        cx.simulate_window_resize(handle, gpui::size(px(1600.), px(800.)));
+        cx.simulate_window_resize(handle, gpui::size(px(1920.), px(800.)));
         cx.run_until_parked();
         let dismiss = cx.debug_bounds("coach-dismiss").unwrap();
         cx.simulate_click(dismiss.center(), gpui::Modifiers::default());
@@ -15857,19 +15969,31 @@ mod tests {
             "theme-preset-19",
         ];
         assert_eq!(selectors.len(), ThemePreset::ALL.len());
+        let click_preset = |selector: &'static str, vcx: &mut gpui::VisualTestContext| {
+            for _ in 0..40 {
+                let bounds = vcx.debug_bounds(selector).expect("every preset has a picker row");
+                let viewport = vcx.debug_bounds("theme-settings").unwrap();
+                if bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom() {
+                    vcx.simulate_click(bounds.center(), gpui::Modifiers::default());
+                    vcx.run_until_parked();
+                    return;
+                }
+                let direction = if bounds.top() < viewport.top() { 80.0 } else { -80.0 };
+                vcx.simulate_event(gpui::ScrollWheelEvent {
+                    position: viewport.center(),
+                    delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(direction))),
+                    modifiers: gpui::Modifiers::default(),
+                    touch_phase: gpui::TouchPhase::Moved,
+                });
+                vcx.run_until_parked();
+            }
+            panic!("preset {selector} never entered the theme viewport");
+        };
         for (selector, preset) in selectors.into_iter().zip(ThemePreset::ALL) {
-            let bounds = vcx
-                .debug_bounds(selector)
-                .expect("every preset has a picker row");
-            vcx.simulate_click(bounds.center(), gpui::Modifiers::default());
-            vcx.run_until_parked();
+            click_preset(selector, vcx);
             assert_eq!(Theme::active_preset(), preset);
         }
-        let light = vcx
-            .debug_bounds("theme-preset-3")
-            .expect("all presets paint");
-        vcx.simulate_click(light.center(), gpui::Modifiers::default());
-        vcx.run_until_parked();
+        click_preset("theme-preset-3", vcx);
         assert_eq!(Theme::active_preset(), ThemePreset::NeutralLight);
         assert!(vcx.debug_bounds("theme-settings").is_some());
         assert!(vcx.debug_bounds("theme-picker-button").is_none());

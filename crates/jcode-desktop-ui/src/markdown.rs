@@ -1945,7 +1945,7 @@ fn render_document_with_prompt_background(
                 ))
                 .into_any_element(),
             Block::Paragraph(text) => div()
-                .line_height(relative(1.55))
+                .line_height(relative(if prompt_background.is_some() { 1.6 } else { 1.72 }))
                 .child(inline_text(&text))
                 .into_any_element(),
             Block::Bullet { depth, text, task } => {
@@ -2101,6 +2101,11 @@ fn render_document_with_prompt_background(
     div()
         .flex()
         .flex_col()
+        .when(prompt_background.is_none() && !reasoning, |el| {
+            el.font_family(Theme::global().FONT_UI)
+                .text_size(px(15.))
+                .text_color(Theme::global().TEXT)
+        })
         .children(children)
         .into_any_element()
 }
