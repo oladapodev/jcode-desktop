@@ -203,7 +203,7 @@ impl Panel {
 
     /// Read-only file preview opened from the Files sidebar.
     pub(super) fn render_code_file(&self, window: &Window, cx: &Context<Self>) -> gpui::AnyElement {
-        const CODE_SIZE: f32 = 13.0;
+        const CODE_SIZE: f32 = 12.5;
         const CODE_LINE: f32 = 22.0;
         let theme = Theme::global();
         let file = self.code_file.as_ref().expect("code file panel");
@@ -223,7 +223,7 @@ impl Panel {
             .font_family(theme.FONT_MONO)
             .text_size(px(CODE_SIZE))
             .line_height(px(CODE_LINE))
-            .pt(px(14.0))
+            .pt(px(8.0))
             .pb(px(24.0));
         match &file.contents {
             Ok(contents) if !contents.is_empty() => {
@@ -244,9 +244,9 @@ impl Panel {
                         .min_w_full()
                         .child(
                             div()
-                                .w(px(54.0))
+                                .w(px(48.0))
                                 .flex_none()
-                                .pr(px(16.0))
+                                .pr(px(14.0))
                                 .text_align(gpui::TextAlign::Right)
                                 .text_color(theme.CODE_GUTTER)
                                 .children(
@@ -311,31 +311,29 @@ impl Panel {
                 div()
                     .debug_selector(|| "code-file-header".into())
                     .flex_none()
-                    .h(px(38.0))
+                    .h(px(40.0))
                     .px(px(12.0))
                     .flex()
                     .items_center()
-                    .gap(px(10.0))
+                    .gap(px(7.0))
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .child(
-                        div()
-                            .flex_none()
-                            .max_w(relative(0.5))
-                            .truncate()
-                            .font_family(theme.FONT_UI)
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_size(px(12.5))
-                            .text_color(theme.TEXT_DIM)
-                            .child(name),
-                    )
+                    .font_family(theme.FONT_MONO)
+                    .text_size(px(12.0))
                     .child(
                         div()
                             .min_w_0()
                             .truncate()
-                            .font_family(theme.FONT_MONO)
-                            .text_size(px(11.5))
                             .text_color(theme.TEXT_FAINT)
+                            .child(file.path.parent().map(|parent| parent.display().to_string()).unwrap_or_default()),
+                    )
+                    .child(div().text_color(theme.TEXT_FAINT).child("›"))
+                    .child(
+                        div()
+                            .flex_none()
+                            .truncate()
+                            .font_family(theme.FONT_MONO)
+                            .text_color(theme.TEXT)
                             .child(text_selection::plain(
                                 self.transcript_selection.clone(),
                                 "code-file-path",
@@ -343,7 +341,10 @@ impl Panel {
                                 window,
                                 cx,
                             )),
-                    ),
+                    )
+                    .child(div().ml_auto().flex_none().font_family(theme.FONT_UI)
+                        .text_size(px(11.0)).text_color(theme.TEXT_FAINT)
+                        .child(file.path.extension().and_then(|ext| ext.to_str()).unwrap_or("Text").to_uppercase())),
             )
             .child({
                 div()

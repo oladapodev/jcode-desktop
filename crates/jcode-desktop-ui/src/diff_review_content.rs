@@ -44,6 +44,7 @@ impl ReviewContent {
                     },
                     cx,
                 );
+                view.set_embedded();
                 view.set_status(self.done, self.failed, cx);
                 view
             });
@@ -73,7 +74,7 @@ impl ReviewContent {
                     .size_full()
                     .overflow_y_scroll()
                     .track_scroll(scroll)
-                    .p_2()
+                    .pt_1()
                     .child(view.clone()),
             )
             .child(crate::scrollbar::vertical(scroll, "rich-review-scrollbar"))

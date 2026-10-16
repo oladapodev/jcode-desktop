@@ -12,12 +12,12 @@ mkdir -p "$OUT"
 
 # view | reference | native screenshot.py args
 VIEWS=(
-  "chat|chat-done|--transcript all"
-  "chat-light|chat-paper|--transcript all --theme studio-light"
-  "tools|chat-live|--transcript orb-tools"
+  "chat|chat-done|--demo-data prototype"
+  "chat-light|chat-paper|--demo-data prototype --theme studio-light"
+  "tools|chat-live|--demo-data prototype --transcript orb-tools"
   "home|home|--transcript empty"
-  "agents|agents|--panels 3 --swarm"
-  "agents-light|agents-paper|--panels 3 --swarm --theme studio-light"
+  "agents|agents|--swarm --agents-view"
+  "agents-light|agents-paper|--swarm --agents-view --theme studio-light"
   "code|code|--panels 2 --transcript diff-rich"
   "code-light|code-paper|--panels 2 --transcript diff-rich --theme studio-light"
   "review|review|--transcript diff-rich"

@@ -210,6 +210,7 @@ pub(crate) struct DiffView {
     failed: bool,
     copied: Option<String>,
     counts: (usize, usize),
+    embedded: bool,
 }
 
 impl DiffView {
@@ -240,7 +241,13 @@ impl DiffView {
             failed: false,
             copied: None,
             counts,
+            embedded: false,
         }
+    }
+
+    /// The dedicated review pane already owns the file list and status bar.
+    pub(crate) fn set_embedded(&mut self) {
+        self.embedded = true;
     }
 
     pub fn set_status(&mut self, done: bool, failed: bool, cx: &mut Context<Self>) {
@@ -504,14 +511,13 @@ impl DiffView {
             .w_full()
             .min_w_0()
             .overflow_hidden()
-            .rounded(px(14.))
-            .bg(theme.CODE_BG)
+            .when(!self.embedded, |el| el.rounded(px(14.)).bg(theme.CODE_BG))
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .px_1p5()
-                    .pt_1p5()
+                    .pt_1()
                     .pb_1()
                     .child(
                         div()
@@ -580,7 +586,11 @@ impl DiffView {
                                         .child(file.kind.clone()),
                                 )
                             })
-                            .child(stats(state.counts)),
+                            .child(stats(state.counts))
+                            .when(self.embedded, |el| el
+                                .child(self.control("diff-unified", "Unified", !self.split, Control::Unified, cx))
+                                .child(self.control("diff-split", "Split", self.split, Control::Split, cx))
+                                .child(self.control("diff-copy", "Copy diff", false, Control::CopyDiff(None), cx))),
                     )
                     .when_some(file.previous_path.as_ref(), |el, old| {
                         el.child(
@@ -838,11 +848,11 @@ impl Render for DiffView {
             .flex_col()
             .w_full()
             .min_w_0()
-            .gap_2()
+            .when(!self.embedded, |el| el.gap_2())
             .text_size(px(12.))
             .text_color(Theme::global().TEXT)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(
+            .when(!self.embedded, |view| view.child(
                 div()
                     .flex()
                     .flex_row()
@@ -905,7 +915,7 @@ impl Render for DiffView {
                                 cx,
                             )),
                     ),
-            );
+            ));
         let start = self.file_page * PAGE_FILES;
         let end = (start + PAGE_FILES).min(self.files.len());
         if self.files.len() > PAGE_FILES {

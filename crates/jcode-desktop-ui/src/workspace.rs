@@ -7232,8 +7232,7 @@ impl Workspace {
                         SidebarView::Sessions => list.into_any_element(),
                         SidebarView::Learn => self.render_tutorial_guides(cx),
                         SidebarView::Files => self.render_files_sidebar(cx),
-                        SidebarView::Theme => self.render_theme_settings(cx),
-                        SidebarView::Settings => self.render_settings(cx),
+                        SidebarView::Theme | SidebarView::Settings => div().flex_1().into_any_element(),
                         SidebarView::Accounts => self.render_accounts(cx).unwrap_or_else(|| {
                             div()
                                 .debug_selector(|| "accounts-empty".into())
@@ -7812,65 +7811,62 @@ impl Workspace {
     fn render_theme_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let active = Theme::active_preset();
         let theme = Theme::global();
-        let is_studio =
-            |preset: ThemePreset| matches!(preset, ThemePreset::StudioDark | ThemePreset::StudioLight);
-        // Studio first (the defaults), then everything else in catalogue order.
-        // Selectors keep the preset's catalogue index so they stay stable.
-        let ordered = ThemePreset::ALL
+        let featured = |preset: ThemePreset| matches!(preset,
+            ThemePreset::StudioDark | ThemePreset::Midnight | ThemePreset::PureBlack | ThemePreset::StudioLight);
+        // Keep catalogue indices stable for the theme-preset selectors.
+        let ordered = [ThemePreset::StudioDark, ThemePreset::Midnight,
+            ThemePreset::PureBlack, ThemePreset::StudioLight]
             .into_iter()
-            .enumerate()
-            .filter(|(_, preset)| is_studio(*preset))
             .chain(
                 ThemePreset::ALL
                     .into_iter()
-                    .enumerate()
-                    .filter(|(_, preset)| !is_studio(*preset)),
-            );
-        let new_grid = || div().flex_none().flex().flex_wrap().gap(px(6.0)).px(px(4.0));
+                    .filter(|preset| !featured(*preset)),
+            ).map(|preset| (ThemePreset::ALL.iter().position(|item| *item == preset).unwrap(), preset));
+        let new_grid = || div().flex_none().flex().flex_wrap().gap(px(12.0));
         let mut studio = new_grid();
         let mut more = new_grid();
         for (index, preset) in ordered {
             let selected = preset == active;
             let t = Theme::preview(preset);
             let line = |width: f32, color: gpui::Rgba| {
-                div().h(px(3.0)).w(px(width)).rounded_full().bg(color)
+                div().h(px(6.0)).w(px(width)).rounded_full().bg(color)
             };
             // A miniature workspace in the preset's own palette. Only the
             // selected card gets a ring, in the current accent.
             let swatch = div()
-                .h(px(34.0))
+                .h(px(86.0))
                 .w_full()
-                .p(px(4.0))
+                .p(px(10.0))
                 .flex()
                 .gap(px(4.0))
-                .rounded(px(7.0))
+                .rounded(px(10.0))
                 .bg(t.BG)
                 .border_1()
                 .border_color(theme.TEXT.opacity(0.08))
-                .child(div().w(px(14.0)).h_full().rounded(px(4.0)).bg(t.HEADER_BG))
+                .child(div().w(px(38.0)).h_full().rounded(px(6.0)).bg(t.HEADER_BG))
                 .child(
                     div()
                         .flex_1()
                         .h_full()
-                        .p(px(4.0))
+                        .p(px(8.0))
                         .rounded(px(4.0))
                         .bg(t.PANEL_BG)
                         .flex()
                         .flex_col()
                         .gap(px(3.0))
-                        .child(line(30.0, t.TEXT))
-                        .child(line(42.0, t.TEXT_DIM))
-                        .child(line(18.0, t.ACCENT)),
+                        .child(line(52.0, t.TEXT))
+                        .child(line(36.0, t.TEXT_DIM))
+                        .child(div().mt_auto().ml_auto().w(px(24.0)).h(px(12.0)).rounded_full().bg(t.ACCENT)),
                 );
             let card = 
                 div()
                     .id(("theme-preset", index))
                     .debug_selector(move || format!("theme-preset-{index}"))
                     .flex_none()
-                    .w(px(106.0))
-                    .p(px(4.0))
-                    .rounded(px(10.0))
-                    .border_2()
+                    .w(px(150.0))
+                    .overflow_hidden()
+                    .rounded(px(14.0))
+                    .border_1()
                     .border_color(if selected {
                         theme.ACCENT
                     } else {
@@ -7879,7 +7875,7 @@ impl Workspace {
                     .cursor_pointer()
                     .flex()
                     .flex_col()
-                    .gap(px(5.0))
+                    .gap(px(0.0))
                     .when(!selected, |el| el.hover(|el| el.bg(theme.TOOL_BG)))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
@@ -7888,15 +7884,23 @@ impl Workspace {
                     .child(swatch)
                     .child(
                         div()
-                            .px(px(2.0))
-                            .pb(px(1.0))
+                            .h(px(34.0))
+                            .px(px(12.0))
+                            .flex().items_center().justify_between()
+                            .bg(theme.PANEL_BG)
                             .truncate()
-                            .text_size(px(12.0))
+                            .text_size(px(12.5))
                             .when(selected, |el| el.font_weight(gpui::FontWeight::MEDIUM))
                             .text_color(if selected { theme.TEXT } else { theme.TEXT_DIM })
-                            .child(preset.label()),
+                            .child(match preset {
+                                ThemePreset::StudioDark => "Graphite",
+                                ThemePreset::StudioLight => "Paper",
+                                ThemePreset::PureBlack => "Carbon",
+                                _ => preset.label(),
+                            })
+                            .when(selected, |el| el.child(div().text_color(theme.ACCENT).child("✓"))),
                     );
-            if is_studio(preset) {
+            if featured(preset) {
                 studio = studio.child(card);
             } else {
                 more = more.child(card);
@@ -7908,22 +7912,32 @@ impl Workspace {
             .id("theme-settings")
             .debug_selector(|| "theme-settings".into())
             .size_full()
-            .px(px(8.0))
-            .pt(px(10.0))
+            .px(px(40.0))
+            .pt(px(34.0))
             .pb(px(24.0))
             .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(px(2.0))
+            .gap(px(0.0))
             .font_family(theme.FONT_UI)
             .child(settings_rows::page_title("Appearance"))
-            .child(div().px(px(10.0)).pb(px(8.0)).text_size(px(12.0))
-                .text_color(theme.TEXT_DIM).child("Choose a workspace theme."))
-            .child(settings_rows::section_label("Studio themes"))
+            .child(div().pb(px(14.0)).text_size(px(13.0))
+                .text_color(theme.TEXT_DIM).child("Interface text is set in Inter. Code stays monospace."))
             .child(studio)
+            .child(div().flex_none().h(px(28.0)))
+            .child(div().flex_none().rounded(px(14.0)).overflow_hidden().bg(theme.PANEL_BG)
+                .child(settings_rows::row("appearance-interface-font", "Interface font")
+                    .child(settings_rows::value("Inter  ⌄")))
+                .child(settings_rows::row("appearance-code-font", "Code font")
+                    .child(settings_rows::value("JetBrains Mono  ⌄")))
+                .child(settings_rows::row("appearance-text-size", "Text size")
+                    .child(settings_rows::value("Small     Default     Large")))
+                .child(settings_rows::row("appearance-reduce-motion", "Reduce motion")
+                    .child(settings_rows::switch(cx.reduce_motion())))
+                .child(settings_rows::row("appearance-translucent-sidebar", "Translucent sidebar")
+                    .child(settings_rows::switch(false))))
             .child(settings_rows::section_label("More themes"))
             .child(more)
-            .child(div().flex_none().h(px(12.0)))
             .into_any_element()
     }
 
@@ -8013,6 +8027,61 @@ impl Workspace {
             .child(self.render_account_settings(cx))
             .child(self.render_sound_settings(cx))
             .children(applet_settings)
+            .into_any_element()
+    }
+
+    /// Settings occupy the canvas, not the narrow sidebar tab body. Keep the
+    /// workspace sidebar in place and give the page its own section navigation.
+    fn render_settings_canvas(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = Theme::global();
+        let appearance = self.sidebar_view == SidebarView::Theme;
+        let mut sections = div()
+            .flex_none()
+            .w(px(232.0))
+            .h_full()
+            .px(px(12.0))
+            .pt(px(22.0))
+            .border_r_1()
+            .border_color(theme.PANEL_BORDER)
+            .font_family(theme.FONT_UI)
+            .child(div().px(px(10.0)).pb(px(14.0)).text_size(px(17.0))
+                .font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme.TEXT).child("Settings"));
+        for (index, (icon, label, page)) in [
+            ("⚙", "General", SidebarView::Settings),
+            ("♙", "Account and sync", SidebarView::Accounts),
+            ("⌘", "Models and logins", SidebarView::Accounts),
+            ("◉", "Appearance", SidebarView::Theme),
+            ("▤", "Conversation", SidebarView::Settings),
+            ("▣", "Machines", SidebarView::Settings),
+            ("▹", "Terminal", SidebarView::Settings),
+            ("♩", "Voice", SidebarView::Settings),
+            ("♧", "Notifications", SidebarView::Settings),
+            ("◌", "Stream mode", SidebarView::Settings),
+            ("⌨", "Keyboard", SidebarView::Settings),
+            ("↓", "Updates and about", SidebarView::Settings),
+        ].into_iter().enumerate() {
+            let selected = if appearance { index == 3 } else { index == 0 };
+            sections = sections.child(div()
+                .id(("settings-section", index))
+                .h(px(32.0)).px(px(10.0)).flex().items_center().gap(px(10.0))
+                .rounded(px(8.0)).cursor_pointer()
+                .when(selected, |el| el.bg(theme.USER_BG))
+                .hover(|el| el.bg(theme.USER_BG))
+                .text_size(px(12.5))
+                .text_color(if selected { theme.TEXT } else { theme.TEXT_DIM })
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _, _, cx| {
+                    this.sidebar_view = page;
+                    cx.notify();
+                }))
+                .child(div().w(px(14.0)).flex_none().text_size(px(13.0))
+                    .text_color(if selected { theme.ACCENT } else { theme.TEXT_DIM }).child(icon))
+                .child(label));
+        }
+        div().size_full().flex().bg(theme.BG)
+            .child(sections)
+            .child(div().flex_1().min_w_0().h_full().overflow_hidden()
+                .child(div().size_full().max_w(px(720.0)).mx_auto()
+                    .child(if appearance { self.render_theme_settings(cx) } else { self.render_settings(cx) })))
             .into_any_element()
     }
 
@@ -9352,9 +9421,9 @@ impl Render for Workspace {
                             .min_h_0()
                             .flex()
                             .flex_col()
-                            .pt(px(content_top_inset))
-                            .pl(px(connector_width))
-                            .pr(px(right_margin))
+                            .pt(px(if matches!(self.sidebar_view, SidebarView::Settings | SidebarView::Theme) { 0.0 } else { content_top_inset }))
+                            .pl(px(if matches!(self.sidebar_view, SidebarView::Settings | SidebarView::Theme) { 0.0 } else { connector_width }))
+                            .pr(px(if matches!(self.sidebar_view, SidebarView::Settings | SidebarView::Theme) { 0.0 } else { right_margin }))
                             .child(
                                 div()
                                     .debug_selector(|| "workspace-canvas".into())
@@ -9369,8 +9438,13 @@ impl Render for Workspace {
                                             folder_surface::Region::Canvas,
                                         ))
                                     })
-                                    .child(content)
-                                    .when(!self.agents_view, |el| el.child(self.render_workspace_bar(
+                                    .child(if matches!(self.sidebar_view, SidebarView::Settings | SidebarView::Theme)
+                                        && !self.slots.get(self.active).is_some_and(|slot| slot.panel.read(cx).is_machines()) {
+                                        self.render_settings_canvas(cx)
+                                    } else {
+                                        content
+                                    })
+                                    .when(!self.agents_view && !matches!(self.sidebar_view, SidebarView::Settings | SidebarView::Theme), |el| el.child(self.render_workspace_bar(
                                         canvas_w,
                                         compact || !self.show_sidebar,
                                         coach_progress,
@@ -9378,7 +9452,7 @@ impl Render for Workspace {
                                         cx,
                                     )))
                                     .when(
-                                        !self.agents_view && self.show_minimap
+                                        !self.agents_view && !matches!(self.sidebar_view, SidebarView::Settings | SidebarView::Theme) && self.show_minimap
                                             && live_tabs::minimap_fits_header(canvas_w)
                                             && !self.slots.is_empty()
                                             && overview_progress <= 0.0,
@@ -16157,7 +16231,7 @@ mod tests {
                 let after = workspace.read_with(vcx, |w, _| (w.show_minimap, w.showcase_mode));
                 if selector == "settings-minimap" {
                     assert_eq!(after, (!before.0, before.1));
-                    assert_eq!(vcx.debug_bounds("minimap").is_some(), after.0);
+                    assert!(vcx.debug_bounds("minimap").is_none(), "the settings page hides the workspace minimap");
                 } else {
                     assert_eq!(after, (before.0, !before.1));
                 }

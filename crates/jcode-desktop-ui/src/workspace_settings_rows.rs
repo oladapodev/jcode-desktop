@@ -5,17 +5,16 @@
 //! description lines. Any detail lives in a tooltip.
 use super::*;
 
-pub(super) const ROW_HEIGHT: f32 = 44.0;
+pub(super) const ROW_HEIGHT: f32 = 58.0;
 pub(super) const ROW_RADIUS: f32 = 10.0;
 
 /// Page title at the top of a settings page.
 pub(super) fn page_title(label: &'static str) -> gpui::Div {
     div()
         .flex_none()
-        .px(px(10.0))
-        .pt(px(8.0))
-        .pb(px(8.0))
-        .text_size(px(18.0))
+        .pt(px(0.0))
+        .pb(px(6.0))
+        .text_size(px(22.0))
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(Theme::global().TEXT)
         .child(label)
@@ -25,7 +24,7 @@ pub(super) fn page_title(label: &'static str) -> gpui::Div {
 pub(super) fn section_label(label: impl Into<gpui::SharedString>) -> gpui::Div {
     div()
         .flex_none()
-        .px(px(10.0))
+        .px(px(4.0))
         .pt(px(18.0))
         .pb(px(6.0))
         .text_size(px(12.0))
@@ -45,8 +44,9 @@ pub(super) fn row(
         .debug_selector(move || id.into())
         .flex_none()
         .h(px(ROW_HEIGHT))
-        .px(px(10.0))
-        .rounded(px(ROW_RADIUS))
+        .px(px(16.0))
+        .border_b_1()
+        .border_color(theme.PANEL_BORDER)
         .flex()
         .items_center()
         .justify_between()
