@@ -35,6 +35,10 @@ fn method_pill_selects_existing_provider_inline(cx: &mut gpui::TestAppContext) {
             },
             cx,
         );
+        // The account chip rides the chat composer. The home hero keeps
+        // only model + effort, with accounts inside the model picker.
+        *panel.items = vec![Item::User("Hello".into())];
+        cx.notify();
     });
     vcx.run_until_parked();
     let pill = vcx.debug_bounds("panel-login").unwrap();

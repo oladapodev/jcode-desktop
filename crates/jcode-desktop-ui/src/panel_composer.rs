@@ -37,6 +37,11 @@ impl Panel {
         let compact = window.viewport_size().width < px(480.) || narrow_pane;
         let card_focused = self.input.read(cx).focus_handle.is_focused(window);
         let screenshot_mode = crate::config::display().screenshot_mode;
+        // The home hero invites a task, the chat invites a reply.
+        let placeholder = if self.composer_hero { HOME_PLACEHOLDER } else { "Reply" };
+        if self.input.read(cx).placeholder() != placeholder {
+            self.input.update(cx, |input, cx| input.set_placeholder(placeholder, cx));
+        }
         let account_label = account_method_label(self.provider.as_deref(), self.auth_method.as_deref());
         let model_label = pretty_model_label(self.model.as_deref());
         let effort = self
@@ -47,13 +52,19 @@ impl Panel {
             .map(str::to_string);
         // Container query, as in the prototype: secondary chip labels drop
         // (effort, then mode, then account) before any label is clipped.
+        // Before a model is chosen, one quiet "Choose model" chip opens the
+        // model picker, which holds the account entry. The home hero then
+        // shows only model + effort, as in the prototype. The chat keeps a
+        // quiet icon-only chip to switch between connected accounts.
+        let show_account_chip = self.model.is_some() && !self.composer_hero;
         let labels = chip_labels(
             self.composer_width,
             &model_label,
             effort.as_deref().map(effort_label).as_deref(),
-            self.model.is_none().then_some(account_label.as_str()),
+            None,
+            show_account_chip,
         );
-        let (show_mode_label, show_effort_label, show_account_label, show_context) = labels;
+        let (show_mode_label, show_effort_label, _, show_context) = labels;
         // Once a model is chosen the account is detail: it lives in the model
         // chip's tooltip and an icon-only account chip, as in the prototype.
         let model_tooltip = format!("{model_label} · {account_label}");
@@ -220,14 +231,13 @@ impl Panel {
                                 cx.stop_propagation();
                             }))
                     }))
-                    .when(!narrow_pane, |identity| identity.child(
+                    .when(!narrow_pane && show_account_chip, |identity| identity.child(
                         composer_pill("panel-login")
                             .flex_shrink(2.)
                             .min_w(px(24.))
                             .when(!compact, |el| el.child(chip_icon(ACCOUNT_ICON, 14.)))
-                            .when(compact || show_account_label, |el| el.child(div().min_w_0().truncate().child(if compact { "•••".to_string() } else { account_label.clone() })))
-                            .when(!compact && show_account_label, |el| el.child(chip_chevron()))
-                            .when(!show_account_label, |el| el.tooltip(move |_, cx| cx.new(|_| super::usage::MeterTooltip(account_tooltip.clone().into())).into()))
+                            .when(compact, |el| el.child(div().min_w_0().truncate().child("•••")))
+                            .tooltip(move |_, cx| cx.new(|_| super::usage::MeterTooltip(account_tooltip.clone().into())).into())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.toggle_provider_picker(window, cx);
                                 cx.stop_propagation();
@@ -258,6 +268,11 @@ impl Panel {
             .flex()
             .flex_col()
             .children(strips)
+            // The dock draws this above itself. The home hero has no dock, so
+            // "Choose model" (and its Connect account entry) opens here.
+            .when(self.composer_hero && self.recovery_picker_open, |el| {
+                el.child(div().mb_2().rounded(px(14.)).overflow_hidden().child(self.render_recovery_model_picker(cx)))
+            })
             .children(self.render_provider_picker(window, cx))
             .child(
                 // One card: the editor on top, its controls on a row below.
@@ -544,12 +559,13 @@ impl Panel {
 /// Which optional chip parts fit a composer card `width` wide: mode label,
 /// effort label, account label, context ring. Secondary labels drop first so
 /// the model name never clips. `0` (not yet measured) shows everything. A
-/// `None` account is already icon-only.
+/// `None` account is icon-only when `account_chip` is shown, else absent.
 fn chip_labels(
     width: f32,
     model: &str,
     effort: Option<&str>,
     account: Option<&str>,
+    account_chip: bool,
 ) -> (bool, bool, bool, bool) {
     if width <= 0. {
         return (true, true, account.is_some(), true);
@@ -570,7 +586,8 @@ fn chip_labels(
             + effort.map_or(0., |label| if effort_label { 43. + text(label) } else { 37. })
             + match account.filter(|_| account_label) {
                 Some(account) => picker(account),
-                None => 34.,
+                None if account_chip || account.is_some() => 34.,
+                None => 0.,
             }
             + if context { 64. } else { 0. }
     };
@@ -614,10 +631,12 @@ pub(super) fn composer_pill(id: &'static str) -> gpui::Stateful<gpui::Div> {
 }
 
 const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>"#;
+/// Hero composer hint on the home screen (the chat reads `Reply`).
+pub(super) const HOME_PLACEHOLDER: &str = "Describe a task, paste an error, or drop a screenshot";
 /// Agent mode (lucide `zap`).
 const ZAP_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>"#;
-/// Model chip before a model is chosen (lucide `sparkles`).
-const MODEL_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/></svg>"#;
+/// Model chip before a model is chosen: a neutral model glyph (lucide `box`).
+const MODEL_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>"#;
 const ACCOUNT_ICON: &[u8] = include_bytes!("../../../assets/icons/account.svg");
 const CHEVRON_DOWN_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
 

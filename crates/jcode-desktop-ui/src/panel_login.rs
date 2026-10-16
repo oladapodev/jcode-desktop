@@ -1153,9 +1153,16 @@ mod tests {
                 input.set_content("keep my draft".into(), cx)
             });
         });
-        assert!(vcx.debug_bounds("panel-login").is_some());
-        // Workspace tests exercise the footer opening a separate adjacent panel.
-        panel.update(vcx, |panel, cx| panel.open_login_picker(cx));
+        // No model yet: the single "Choose model" chip is the entry point, and
+        // its picker offers "Connect account".
+        assert!(vcx.debug_bounds("panel-login").is_none());
+        let model = vcx.debug_bounds("panel-model").expect("Choose model chip");
+        vcx.simulate_click(model.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        let connect = vcx
+            .debug_bounds("recovery-connect-account")
+            .expect("model picker offers Connect account");
+        vcx.simulate_click(connect.center(), gpui::Modifiers::default());
         vcx.run_until_parked();
         assert!(vcx.debug_bounds("login-dialog").is_some());
         for _ in 0..20 {

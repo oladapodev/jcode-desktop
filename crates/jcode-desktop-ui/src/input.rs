@@ -650,6 +650,18 @@ impl PromptInput {
         self.working_dir.as_deref()
     }
 
+    pub(crate) fn placeholder(&self) -> &str {
+        self.placeholder.as_ref()
+    }
+
+    /// The home screen and the chat share one input with different hints.
+    pub(crate) fn set_placeholder(&mut self, placeholder: &'static str, cx: &mut Context<Self>) {
+        if self.placeholder.as_ref() != placeholder {
+            self.placeholder = placeholder.into();
+            cx.notify();
+        }
+    }
+
     /// Whether `set_spacious` or `set_trailing_inset` with these values would
     /// change anything. Checked before updating while a frame is drawn.
     pub(crate) fn needs_layout_update(&self, spacious: bool, trailing_inset: f32) -> bool {

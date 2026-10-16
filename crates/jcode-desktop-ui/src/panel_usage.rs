@@ -586,6 +586,8 @@ mod tests {
                 panel.auth_method = Some("oauth".into());
                 panel.model = Some("gpt-5.6-sol".into());
                 panel.context_tokens = Some(100_000);
+                // The chat composer (not the home hero) carries the account chip.
+                *panel.items = vec![Item::User("Hello".into())];
             });
             workspace
         });

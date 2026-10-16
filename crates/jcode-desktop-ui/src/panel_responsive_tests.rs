@@ -18,6 +18,8 @@ fn footer_model_click_preserves_draft_and_selects_without_sending(cx: &mut gpui:
             input.set_current_model(panel.model.clone(), cx);
             input.set_content("keep my draft".into(), cx)
         });
+        // The chat composer carries the account chip after the model.
+        *panel.items = vec![Item::User("Hello".into())];
         cx.notify();
     });
     vcx.run_until_parked();
@@ -117,7 +119,10 @@ fn narrow_short_panels_keep_composer_and_footer_controls_visible(cx: &mut gpui::
                 model.left() >= identity.left() && login.map_or(true, |login| login.right() <= identity.right()),
                 "{width}x{height} fresh={fresh}: {model:?} {login:?} {identity:?}"
             );
-            if let Some(login) = login {
+            if fresh {
+                // No model yet: one "Choose model" chip, accounts live in its picker.
+                assert!(login.is_none(), "{width}: no separate Accounts chip before a model");
+            } else if let Some(login) = login {
                 assert!(login.size.width > px(20.) && model.right() <= login.left(), "identity controls must not overlap");
             } else {
                 assert!(width >= 480., "only a narrow side pane can hide the account control");
