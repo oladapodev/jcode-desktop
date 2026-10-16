@@ -367,3 +367,114 @@ fn running_tool_row_pulses_do_not_rebuild_the_panel(cx: &mut gpui::TestAppContex
         "a running tool row rebuilt Workspace {workspace} and Panel {panel} times in one second"
     );
 }
+
+fn idle_session(id: &str, parent: Option<&str>, status: &str) -> jcode_sdk::SessionInfo {
+    jcode_sdk::SessionInfo {
+        user_connected: false,
+        session_id: id.into(),
+        working_dir: Some("/tmp/idle-project".into()),
+        title: Some(id.into()),
+        status: status.into(),
+        transcript_bytes: None,
+        saved: false,
+        updated_at_ms: Some(1),
+        last_active_at_ms: Some(1),
+        archived: false,
+        archived_at_ms: None,
+        save_label: None,
+        parent_session_id: parent.map(str::to_owned),
+        agent_label: parent.map(|_| "Idle agent".to_owned()),
+        swarm_status: parent.map(|_| "completed".to_owned()),
+        edit_stats: None,
+    }
+}
+
+/// Frames requested and Workspace/Panel renders over one idle second.
+fn idle_second(vcx: &mut gpui::VisualTestContext) -> (usize, u64, u64) {
+    let workspace_before = view_renders("Workspace");
+    let panel_before = view_renders("Panel");
+    let mut frames = 0;
+    for _ in 0..30 {
+        frames += vcx.update(|window, cx| window.simulate_next_frame(cx));
+        vcx.executor()
+            .advance_clock(std::time::Duration::from_millis(34));
+        vcx.run_until_parked();
+    }
+    (
+        frames,
+        view_renders("Workspace") - workspace_before,
+        view_renders("Panel") - panel_before,
+    )
+}
+
+fn assert_idle_workspace_is_still(layout_mode: crate::config::LayoutMode, cx: &mut gpui::TestAppContext) {
+    let sessions = vec![
+        idle_session("session_idle_lead", None, "idle"),
+        idle_session("session_idle_agent", Some("session_idle_lead"), "completed"),
+        idle_session("session_idle_other", None, "closed"),
+    ];
+    let (workspace, vcx) = cx.add_window_view(|_, cx| {
+        let mut workspace = Workspace::for_test(learning::Coach::new(), cx);
+        workspace.layout_mode = layout_mode;
+        // A fresh draft panel shows the home screen.
+        workspace.push_test_panel("idle-home", cx);
+        workspace
+    });
+    workspace.update(vcx, |w, cx| {
+        w.apply(Update::Sessions { sessions: sessions.clone() }, cx);
+        cx.notify();
+    });
+    // Let entrance motion and first-layout measurements settle.
+    let settle = |vcx: &mut gpui::VisualTestContext| {
+        for _ in 0..4 {
+            vcx.update(|window, cx| window.simulate_next_frame(cx));
+            vcx.executor()
+                .advance_clock(std::time::Duration::from_millis(500));
+            vcx.run_until_parked();
+        }
+    };
+    settle(vcx);
+    let (frames, workspace_renders, panel_renders) = idle_second(vcx);
+    assert!(
+        frames == 0 && workspace_renders == 0 && panel_renders == 0,
+        "{layout_mode:?}: idle sidebar, header and home requested {frames} frames and rebuilt \
+         Workspace {workspace_renders} and Panel {panel_renders} times in one second"
+    );
+
+    // The periodic session refresh almost always returns the same catalog.
+    let changed = workspace.update(vcx, |w, cx| {
+        w.apply(Update::Sessions { sessions: sessions.clone() }, cx)
+    });
+    vcx.run_until_parked();
+    let (frames, workspace_renders, panel_renders) = idle_second(vcx);
+    assert!(!changed, "an identical session refresh must report no change");
+    assert!(
+        frames == 0 && workspace_renders == 0 && panel_renders == 0,
+        "{layout_mode:?}: a no-op session refresh requested {frames} frames and rebuilt \
+         Workspace {workspace_renders} and Panel {panel_renders} times"
+    );
+
+    // The Agents view with a finished swarm is just as still.
+    workspace.update(vcx, |w, cx| w.show_agents_view(cx));
+    settle(vcx);
+    let (frames, workspace_renders, panel_renders) = idle_second(vcx);
+    assert!(
+        frames == 0 && workspace_renders == 0 && panel_renders == 0,
+        "{layout_mode:?}: the idle Agents view requested {frames} frames and rebuilt \
+         Workspace {workspace_renders} and Panel {panel_renders} times in one second"
+    );
+}
+
+/// The shipped (redesigned) sidebar, header, home and Agents view must not
+/// draw anything while nothing changes. The Normal layout once waited every
+/// frame for a navigation strip the redesign no longer renders, redrawing the
+/// whole workspace at the display rate for as long as the app was open.
+#[gpui::test]
+fn idle_workspace_views_request_no_frames_and_ignore_noop_refreshes(
+    cx: &mut gpui::TestAppContext,
+) {
+    super::REDESIGNED_NAVIGATION_IN_TEST.with(|cell| cell.set(true));
+    assert_idle_workspace_is_still(crate::config::LayoutMode::Normal, cx);
+    assert_idle_workspace_is_still(crate::config::LayoutMode::FolderTabs, cx);
+    super::REDESIGNED_NAVIGATION_IN_TEST.with(|cell| cell.set(false));
+}

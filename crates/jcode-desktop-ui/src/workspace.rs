@@ -717,6 +717,22 @@ impl WorkspaceSnapshot {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Lets a test render the redesigned sidebar, which tests otherwise skip.
+    static REDESIGNED_NAVIGATION_IN_TEST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The pre-redesign sidebar header: navigation tabs and the project dock.
+/// Tests keep it because many of them drive those tabs.
+fn legacy_sidebar_navigation() -> bool {
+    #[cfg(test)]
+    if REDESIGNED_NAVIGATION_IN_TEST.with(std::cell::Cell::get) {
+        return false;
+    }
+    cfg!(test) || std::env::var_os("JCODE_DESKTOP_LEGACY_SIDEBAR").is_some()
+}
+
 /// Local sessions some jcode process, normally the shared daemon, is running a
 /// turn for right now. Reads only the small streaming-marker directory.
 fn daemon_running_sessions() -> HashSet<String> {
@@ -6332,8 +6348,7 @@ impl Workspace {
             self.sidebar_sessions_list.scroll_to_reveal_item(index);
         }
         let folders = self.layout_mode == crate::config::LayoutMode::FolderTabs;
-        let legacy_navigation = cfg!(test)
-            || std::env::var_os("JCODE_DESKTOP_LEGACY_SIDEBAR").is_some();
+        let legacy_navigation = legacy_sidebar_navigation();
         let folder_frame = self.folder_frame.clone();
         let workspace = cx.entity();
         let mut list = div()
@@ -9111,8 +9126,13 @@ impl Render for Workspace {
         }
         self.sidebar_applets = self.render_sidebar_applets(window, cx);
         self.restore_hidden_machine_focus(window, cx);
+        // The navigation strip's scroll geometry exists only after its first
+        // layout. The redesigned sidebar never renders that strip, so its
+        // bounds stay empty: waiting for them redrew the whole workspace
+        // every frame for as long as the app stayed open.
         if self.show_sidebar
             && self.layout_mode == crate::config::LayoutMode::Normal
+            && legacy_sidebar_navigation()
             && self.sidebar_navigation_scroll.bounds().size.width == px(0.0)
         {
             let workspace = cx.entity().downgrade();
