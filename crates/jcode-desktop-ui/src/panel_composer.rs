@@ -31,7 +31,10 @@ impl Panel {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = Theme::global();
-        let compact = window.viewport_size().width < px(480.);
+        let narrow_pane = window.viewport_size().width >= px(480.)
+            && self.composer_width > 0.
+            && self.composer_width < 500.;
+        let compact = window.viewport_size().width < px(480.) || narrow_pane;
         let card_focused = self.input.read(cx).focus_handle.is_focused(window);
         let screenshot_mode = crate::config::display().screenshot_mode;
         let account_label = account_method_label(self.provider.as_deref(), self.auth_method.as_deref());
@@ -217,7 +220,7 @@ impl Panel {
                                 cx.stop_propagation();
                             }))
                     }))
-                    .child(
+                    .when(!narrow_pane, |identity| identity.child(
                         composer_pill("panel-login")
                             .flex_shrink(2.)
                             .min_w(px(24.))
@@ -229,7 +232,7 @@ impl Panel {
                                 this.toggle_provider_picker(window, cx);
                                 cx.stop_propagation();
                             })),
-                    ),
+                    )),
             )
             .child(
                 div()
@@ -244,7 +247,7 @@ impl Panel {
                     .overflow_hidden()
                     .children((!compact && show_context).then(|| self.render_context_meter()).flatten())
                     .child(self.render_voice_tab(cx))
-                    .children(self.render_publish_button(cx))
+                    .children((!narrow_pane).then(|| self.render_publish_button(cx)).flatten())
             )
             .child(self.render_send_button(cx));
         let strips = self.render_composer_applets(window, cx);
@@ -319,7 +322,9 @@ impl Panel {
                     .text_color(theme.TEXT_FAINT)
                     // The home screen shows where a session starts as chips
                     // under the card, so the route line keeps only status.
-                    .when(self.composer_hero, |el| el.justify_end())
+                    .when(self.composer_hero, |el| {
+                        el.justify_end().absolute().top_full().right_0()
+                    })
                     .when(!self.composer_hero, |el| el.child(
                         div()
                             .min_w_0()
@@ -841,10 +846,11 @@ mod tests {
             let model = vcx.debug_bounds("panel-model").unwrap();
             let name = vcx.debug_bounds("panel-model-name").unwrap();
             let effort = vcx.debug_bounds("panel-model-effort");
-            let login = vcx.debug_bounds("panel-login").unwrap();
+            let login = vcx.debug_bounds("panel-login");
             let context = vcx.debug_bounds("panel-context-meter");
             let voice = vcx.debug_bounds("voice-toggle").unwrap();
-            for (tab_name, tab) in [("model", model), ("login", login), ("voice", voice)] {
+            for (tab_name, tab) in [("model", Some(model)), ("login", login), ("voice", Some(voice))]
+                .into_iter().filter_map(|(name, tab)| tab.map(|tab| (name, tab))) {
                 assert!(
                     tab.top() > input.bottom(),
                     "{tab_name} pill sits below the input at {width}: {tab:?} {input:?}"
@@ -856,13 +862,12 @@ mod tests {
             assert!(name.right() <= model.right());
             if let Some(effort) = effort {
                 assert!(model.right() <= effort.left(), "effort follows the model");
-                assert!(effort.right() <= login.left(), "method follows effort");
-            } else {
+                if let Some(login) = login { assert!(effort.right() <= login.left(), "method follows effort"); }
+            } else if let Some(login) = login {
                 assert!(model.right() <= login.left(), "method follows model");
             }
-            if width >= 800. {
-                let context = context.expect("wide toolbar keeps context ring");
-                assert!(login.right() <= context.left(), "context follows method");
+            if width >= 800. && let Some(context) = context {
+                if let Some(login) = login { assert!(login.right() <= context.left(), "context follows method"); }
                 assert!(context.right() <= voice.left(), "voice follows context");
             }
             assert!(editor.right() <= input.right());

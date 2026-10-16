@@ -74,6 +74,8 @@ mod settings_rows;
 mod workspace_stream_fixture;
 #[path = "workspace_proto_fixture.rs"]
 mod workspace_proto_fixture;
+#[path = "workspace_prototype_panes.rs"]
+mod prototype_panes;
 #[path = "workspace_agents_view.rs"]
 mod workspace_agents_view;
 
@@ -1412,6 +1414,9 @@ impl Workspace {
             }
             if std::env::var("JCODE_DESKTOP_SCREENSHOT_FILES").as_deref() == Ok("1") {
                 workspace.open_files_fixture(cx);
+            }
+            if let Ok(kind) = std::env::var("JCODE_DESKTOP_SCREENSHOT_PROTOTYPE_PANE") {
+                workspace.open_prototype_pane_fixture(&kind, cx);
             }
             if std::env::var("JCODE_DESKTOP_SCREENSHOT_HISTORY").as_deref() == Ok("1") {
                 for index in 0..80 {
@@ -5429,13 +5434,13 @@ impl Workspace {
         };
         let swarm_map = swarm.children.iter().find(|(_, children)| !children.is_empty()).map(|(id, children)| {
             let title = self.sessions.iter().find(|session| &session.session_id == id)
-                .and_then(|session| session.title.as_deref()).unwrap_or("Active swarm").to_owned();
+                .and_then(|session| session.title.as_deref()).filter(|title| !title.trim().is_empty()).unwrap_or("Active swarm").to_owned();
             let count = children.len();
-            div().w_full().p(px(20.0)).rounded(px(16.0)).bg(theme.PANEL_BG)
+            div().debug_selector(|| "overview-swarm-map".into()).w_full().p(px(20.0)).rounded(px(16.0)).bg(theme.PANEL_BG)
                 .flex().flex_col().gap(px(18.0))
-                .child(div().flex().items_center().gap(px(10.0))
-                    .child(div().text_size(px(14.0)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme.TEXT).child(title))
-                    .child(div().px(px(9.0)).py(px(3.0)).rounded_full().bg(theme.ACCENT_DIM)
+                .child(div().min_w_0().flex().items_center().gap(px(10.0))
+                    .child(div().debug_selector(|| "overview-swarm-title".into()).min_w_0().truncate().text_size(px(14.0)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme.TEXT).child(title))
+                    .child(div().flex_none().px(px(9.0)).py(px(3.0)).rounded_full().bg(theme.ACCENT_DIM)
                         .text_size(px(11.0)).text_color(theme.ACCENT).child(format!("{count} agents"))))
                 .child(div().mx_auto().px(px(16.0)).py(px(10.0)).rounded(px(12.0)).bg(theme.HEADER_BG)
                     .text_size(px(13.0)).font_weight(gpui::FontWeight::MEDIUM).text_color(theme.TEXT).child("Coordinator"))
@@ -5443,12 +5448,12 @@ impl Workspace {
                     .children(children.iter().take(8).map(|child| {
                         let member = sidebar_swarm::Member::of(&child.session);
                         let state = member.state;
-                        div().min_w(px(116.0)).px(px(12.0)).py(px(10.0))
+                        div().min_w(px(116.0)).max_w(px(240.0)).px(px(12.0)).py(px(10.0))
                             .rounded(px(12.0)).bg(theme.HEADER_BG)
                             .flex().flex_col().gap(px(7.0))
-                            .child(div().flex().items_center().gap(px(7.0))
+                            .child(div().min_w_0().flex().items_center().gap(px(7.0))
                                 .child(sidebar_swarm::dot(state, 7.0))
-                                .child(div().text_size(px(12.5)).text_color(theme.TEXT).child(member.name)))
+                                .child(div().min_w_0().truncate().text_size(px(12.5)).text_color(theme.TEXT).child(member.name)))
                             .child(div().pl(px(14.0)).text_size(px(11.0))
                                 .text_color(if state == sidebar_swarm::AgentState::Idle { theme.TEXT_FAINT } else { state.color() })
                                 .child(state.word()))
@@ -16353,6 +16358,10 @@ mod sound_settings;
 #[cfg(test)]
 #[path = "workspace_login_tests.rs"]
 mod login_tests;
+
+#[cfg(test)]
+#[path = "robustness_tests.rs"]
+mod robustness_tests;
 
 #[cfg(test)]
 mod accounts_panel_tests {

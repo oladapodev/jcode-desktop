@@ -14,6 +14,7 @@ pub(super) const TAB_STATUS_WIDTH: f32 = 236.0;
 const TAB_MACHINE_WIDTH: f32 = 138.0;
 pub(super) const HEADER_WIDE_BREAKPOINT: f32 = 900.0;
 const LAPTOP_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="12" rx="1.5"/><path d="M2 19h20l-2-3H4z"/></g></svg>"#;
+const REVIEW_TAB_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 9h8M8 15h8M12 12v6"/></g></svg>"#;
 /// Compact windows swap the connection status for a sidebar menu button.
 const TAB_MENU_WIDTH: f32 = 36.0;
 const TAB_NEW_WIDTH: f32 = 40.0;
@@ -699,6 +700,7 @@ impl Workspace {
                 self.live_tabs.hit_targets.push((index, x));
             }
             let padding = (visible / 12.0).min(10.0);
+            let review_tab = index.is_some_and(|index| self.slots[index].panel.read(cx).is_change_review());
             let (title, emoji, ring) = match index {
                 Some(index) => {
                     let panel = self.slots[index].panel.read(cx);
@@ -756,8 +758,9 @@ impl Workspace {
                 .flex()
                 .items_center()
                 .gap(px((visible / 12.0).min(6.0)))
-                // Identity anchor kept for navigation and tests. The session
-                // emoji lives in the tooltip, so the tab itself stays text-only.
+                // Review tabs are utility surfaces rather than chat sessions.
+                // Show their functional diff icon, while keeping the identity
+                // anchor for ordinary session navigation and tests.
                 .child(
                     div()
                         .debug_selector(move || match index {
@@ -765,8 +768,9 @@ impl Workspace {
                             None => "live-session-empty-tab-emoji".into(),
                         })
                         .flex_none()
-                        .w(px(0.0))
-                        .h(px(14.0)),
+                        .w(px(if review_tab { 14.0 } else { 0.0 }))
+                        .h(px(14.0))
+                        .when(review_tab, |el| el.child(gpui::svg().data(REVIEW_TAB_ICON).size(px(14.0)).text_color(theme.TEXT_DIM))),
                 )
                 .when(compact || !(focused || visible >= 52.0), |el| {
                     el.child(
@@ -1048,7 +1052,7 @@ impl Workspace {
                                             .child(div().flex_none().flex().items_center().gap(px(2.0))
                                                 .children((0..agents.min(4)).map(|_| div()
                                                     .size(px(7.0)).rounded_full().bg(theme.ACCENT))))
-                                            .child(div().flex_none().child(format!("{agents} agents")))),
+                                            .child(div().debug_selector(|| "header-agent-count".into()).flex_none().child(format!("{agents} agents")))),
                             )))
                     )
                 }

@@ -213,6 +213,12 @@ impl Panel {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.clone());
+        let directory = self
+            .working_dir
+            .as_ref()
+            .and_then(|root| file.path.parent()?.strip_prefix(root).ok())
+            .map(|relative| relative.display().to_string())
+            .unwrap_or_else(|| file.path.parent().map(|parent| parent.display().to_string()).unwrap_or_default());
         let mut body = div()
             .id("code-file-contents")
             .debug_selector(|| "code-file-contents".into())
@@ -325,7 +331,7 @@ impl Panel {
                             .min_w_0()
                             .truncate()
                             .text_color(theme.TEXT_FAINT)
-                            .child(file.path.parent().map(|parent| parent.display().to_string()).unwrap_or_default()),
+                            .child(directory),
                     )
                     .child(div().text_color(theme.TEXT_FAINT).child("›"))
                     .child(
@@ -337,7 +343,7 @@ impl Panel {
                             .child(text_selection::plain(
                                 self.transcript_selection.clone(),
                                 "code-file-path",
-                                path,
+                                if crate::harness::screenshot_mode() && self.working_dir.is_some() { name } else { path },
                                 window,
                                 cx,
                             )),

@@ -887,6 +887,19 @@ impl Panel {
         let file = &review.files[review.selected];
         let theme = Theme::global();
         let (root_label, rows) = tree_rows(&review.files, &review.collapsed);
+        let compact_files = review.files.len() == 3 && review.rich.is_some();
+        let rows = if compact_files {
+            review.files.iter().enumerate().map(|(index, file)| TreeRow {
+                depth: 0,
+                label: file.path.rsplit('/').next().unwrap_or(&file.path).to_owned(),
+                dir: None,
+                file: Some(index),
+            }).collect()
+        } else {
+            rows
+        };
+        let total_added: usize = review.files.iter().map(FileDiff::added).sum();
+        let total_removed: usize = review.files.iter().map(FileDiff::removed).sum();
         let mono = theme.FONT_MONO.clone();
         let mut tree = div()
             .id("diff-tree-scroll")
@@ -898,7 +911,7 @@ impl Panel {
             .text_size(px(12.))
             .line_height(px(22.));
         let base = usize::from(!root_label.is_empty());
-        if !root_label.is_empty() {
+        if !root_label.is_empty() && !compact_files {
             tree = tree.child(
                 div()
                     .px_2()
@@ -908,6 +921,9 @@ impl Panel {
             );
         }
         for row in rows {
+            if compact_files && row.dir.is_some() {
+                continue;
+            }
             let indent = px(8. + (row.depth + base) as f32 * 14.);
             if let Some(path) = row.dir {
                 let collapsed = review.collapsed.contains(&path);
@@ -957,13 +973,16 @@ impl Panel {
             let entry = &review.files[index];
             let (letter, color) = status_letter(&entry.kind);
             let selected = index == review.selected;
+            let name = entry.path.rsplit('/').next().unwrap_or(&entry.path).to_owned();
+            let directory = entry.path.rsplit_once('/').map(|(parent, _)| parent.to_owned()).unwrap_or_default();
             tree = tree.child(
                 div()
                     .id(("diff-tree-file", index))
                     .debug_selector(move || format!("diff-tree-file-{index}").into())
                     .mx_1()
-                    .pl(indent)
+                    .pl(if compact_files { px(10.) } else { indent })
                     .pr_2()
+                    .when(compact_files, |s| s.py_1p5())
                     .rounded_full()
                     .flex()
                     .gap_1p5()
@@ -971,20 +990,24 @@ impl Panel {
                     .cursor_pointer()
                     .when(selected, |s| s.bg(theme.ACCENT_DIM))
                     .when(!selected, |s| s.hover(|s| s.bg(theme.QUOTE_BG)))
-                    .child(div().flex_none().w(px(10.)).text_color(color).child(letter))
+                    .when(!compact_files, |s| s.child(div().flex_none().w(px(10.)).text_color(color).child(letter)))
                     .child(
                         div()
                             .min_w_0()
                             .flex_1()
-                            .truncate()
+                            .when(!compact_files, |s| s.truncate())
                             .text_color(if selected {
                                 theme.TEXT
                             } else {
                                 theme.CODE_TEXT
                             })
                             .when(selected, |s| s.font_weight(FontWeight::MEDIUM))
-                            .child(row.label),
+                            .when(compact_files, |s| s.flex().flex_col().line_height(px(16.))
+                                .child(div().truncate().child(name))
+                                .child(div().truncate().text_size(px(10.)).text_color(theme.TEXT_FAINT).child(directory)))
+                            .when(!compact_files, |s| s.child(row.label)),
                     )
+                    .when(compact_files, |s| s.child(div().flex_none().text_color(color).child(letter)))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -1041,26 +1064,26 @@ impl Panel {
             .absolute().inset_0().size_full().flex().flex_col().bg(theme.PANEL_BG).occlude()
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-            .child(div().flex_none().flex().items_center().gap_3().p_3().border_b_1().border_color(theme.CODE_BORDER)
-                .child(div().flex_1().min_w_0().flex().flex_col().gap_1()
-                    .child(div().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).text_color(theme.TEXT).child("Change review"))
-                    .child(div().truncate().text_size(px(10.)).text_color(theme.TEXT_DIM).child(review.source.clone())))
-                .child(div().id("diff-close").debug_selector(|| "diff-close".into()).px_2().py_1().rounded_md()
+            .child(div().flex_none().h(px(38.)).flex().items_center().gap_3().px_2().border_b_1().border_color(theme.CODE_BORDER)
+                .child(div().flex_1().min_w_0().flex().items_center()
+                    .child(div().px_3().py_1().rounded_full().border_1().border_color(theme.CODE_BORDER).bg(theme.TOOL_BG).text_size(px(12.)).font_weight(FontWeight::MEDIUM).text_color(theme.TEXT).child("▤  Changes")))
+                .child(div().id("diff-close").debug_selector(|| "diff-close".into()).px_2().py_1().rounded_full()
                     .text_size(px(11.)).text_color(theme.TEXT_DIM).cursor_pointer().hover(|s| s.bg(theme.QUOTE_BG))
-                    .child(if self.is_change_review() { "Close review · Esc" } else { "Back to chat · Esc" })
+                    .child("×")
                     .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
                         this.close_diff_review(window, cx); cx.stop_propagation();
                     }))))
             .child(div().flex_1().min_h_0().flex()
-                .child(div().debug_selector(|| "diff-file-tree".into()).w(relative(0.25)).min_w(px(160.)).max_w(px(300.))
-                    .flex_none().flex().flex_col().m_2().mr_0().rounded_xl().border_1().border_color(theme.CODE_BORDER).bg(theme.CODE_BG).overflow_hidden()
-                    .child(div().flex_none().flex().items_center().gap_2().px_3().pt_2().pb_1()
-                        .child(div().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).text_color(theme.TEXT).child("Files"))
-                        .child(div().text_size(px(11.)).text_color(theme.TEXT_FAINT).child(review.files.len().to_string())))
+                .child(div().debug_selector(|| "diff-file-tree".into()).w(px(230.)).min_w(px(160.))
+                    .flex_none().flex().flex_col().border_r_1().border_color(theme.CODE_BORDER).bg(theme.PANEL_BG).overflow_hidden()
+                    .child(div().flex_none().flex().items_center().gap_1p5().px_3().pt_2().pb_1()
+                        .child(div().text_size(px(12.)).font_weight(FontWeight::MEDIUM).text_color(theme.TEXT).child(format!("{} files", review.files.len())))
+                        .child(div().text_size(px(10.)).text_color(theme.OK).child(format!("+{total_added}")))
+                        .child(div().text_size(px(10.)).text_color(theme.ERROR).child(format!("−{total_removed}"))))
                     .child(tree)
-                    .child(div().flex_none().flex().justify_end().px_3().py_1p5().font_family(mono)
-                        .text_size(px(11.)).text_color(theme.TEXT_FAINT).child(position)))
+                    .when(!compact_files, |s| s.child(div().flex_none().flex().justify_end().px_3().py_1p5().font_family(mono)
+                        .text_size(px(11.)).text_color(theme.TEXT_FAINT).child(position))))
                 .child(div().min_w_0().flex_1().flex().flex_col()
                     .when(review.rich.is_none(), |el| el.child(div().flex_none().p_3().flex().flex_col().gap_2().border_b_1().border_color(theme.CODE_BORDER)
                         .child(div().debug_selector(|| "diff-selected-path".into()).text_size(px(12.)).font_family(theme.FONT_MONO).text_color(theme.TEXT).child(file.path.clone()))
@@ -1078,8 +1101,8 @@ impl Panel {
                                 .child("No line content supplied by this tool.")))
                             .child(diff_list).child(crate::scrollbar::vertical_list(&review.scroll, "diff-scrollbar")))
                         .when_some(review.rich.as_ref(), |el, rich| el.child(rich.render())))
-                    .child(div().flex_none().px_3().py_2().text_size(px(10.)).text_color(theme.TEXT_FAINT)
-                        .child("Recorded tool change, not a live working-tree diff."))))
+                    .when(!compact_files, |s| s.child(div().flex_none().px_3().py_2().text_size(px(10.)).text_color(theme.TEXT_FAINT)
+                        .child("Recorded tool change, not a live working-tree diff.")))))
             .into_any_element())
     }
 }
@@ -1743,7 +1766,9 @@ mod tests {
             .read_with(vcx, |workspace, _| workspace.test_panel(0))
             .unwrap();
         let handle = vcx.update(|window, _| window.window_handle());
-        vcx.simulate_window_resize(handle, gpui::size(px(1440.), px(900.)));
+        // Wide enough that the panel surface (window minus sidebar) still
+        // clears the plan inspector's minimum width.
+        vcx.simulate_window_resize(handle, gpui::size(px(2600.), px(900.)));
         panel.update(vcx, |panel, cx| {
             *panel.items = summary_items();
             cx.notify();

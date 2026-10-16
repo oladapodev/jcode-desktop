@@ -19,9 +19,9 @@ VIEWS=(
   "home|home|--transcript empty"
   "agents|agents|--swarm --agents-view"
   "agents-light|agents-paper|--swarm --agents-view --theme studio-light"
-  "code|code|--panels 2 --transcript diff-rich"
-  "code-light|code-paper|--panels 2 --transcript diff-rich --theme studio-light"
-  "review|review|--demo-data prototype"
+  "code|code|--demo-data prototype --code-pane"
+  "code-light|code-paper|--demo-data prototype --code-pane --theme studio-light"
+  "review|review|--demo-data prototype --review-pane"
   "terminal|terminal|--files --demo-data prototype"
   "settings|settings-appearance|--accounts"
 )

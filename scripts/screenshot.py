@@ -38,6 +38,10 @@ def main():
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--files", action="store_true",
                         help="Files sidebar beside a file preview, a terminal and a side document")
+    parser.add_argument("--code-pane", action="store_true",
+                        help="show the prototype's danfo_roof.rs code pane beside its chat")
+    parser.add_argument("--review-pane", action="store_true",
+                        help="show the prototype's three-file change review beside its chat")
     parser.add_argument("--accounts", action="store_true",
                         help="open the Accounts panel with offline multi-account fixtures")
     parser.add_argument("--sign-in-steps", action="store_true",
@@ -496,6 +500,11 @@ def main():
             env["JCODE_DESKTOP_SCREENSHOT_MINIMAP"] = "1"
         if args.changelog:
             env["JCODE_DESKTOP_SCREENSHOT_CHANGELOG"] = "1"
+        if args.code_pane or args.review_pane:
+            if args.demo_data != "prototype" or args.panels != 1 or (args.code_pane and args.review_pane):
+                parser.error("--code-pane and --review-pane require --demo-data prototype, one panel, and are mutually exclusive")
+            env["JCODE_DESKTOP_SCREENSHOT_PROTOTYPE_PANE"] = "code" if args.code_pane else "review"
+            env["JCODE_DESKTOP_SCREENSHOT_PROTOTYPE_PROJECT"] = str(root / "project" / "tasued")
         if args.files:
             env["JCODE_DESKTOP_SCREENSHOT_FILES"] = "1"
         if args.accounts:
@@ -590,6 +599,8 @@ def main():
                 deadline = time.monotonic() + 45
                 state = root / "state"
                 expected_widths = "widths=" + ",".join([f"{1 / args.panels:.2f}"] * args.panels)
+                if args.code_pane or args.review_pane:
+                    expected_widths = "widths=0.66,0.34"
                 if args.changelog:
                     expected_widths = "widths=" + ",".join(
                         ["0.50", "0.50"] + [f"{1 / args.panels:.2f}"] * (args.panels - 1)
@@ -611,7 +622,7 @@ def main():
                 time.sleep(0.8 if (args.beta_notice or args.beta_notice_interact) else 2)
                 # Exercise the real launch overlay, then leave other fixtures unobscured.
                 if not (args.beta_notice or args.beta_notice_interact or args.account_sign_in or args.account_sign_in_interact or args.accounts or args.sign_in_steps
-                        or args.changelog):
+                        or args.changelog or args.code_pane or args.review_pane):
                     subprocess.run(["xdotool", "key", "--clearmodifiers", "Escape"],
                                    env=env, cwd=root, check=True, timeout=10)
                     time.sleep(0.3)

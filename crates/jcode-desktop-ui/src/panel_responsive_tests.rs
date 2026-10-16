@@ -102,7 +102,7 @@ fn narrow_short_panels_keep_composer_and_footer_controls_visible(cx: &mut gpui::
             );
             assert!(input.left() >= px(0.) && input.right() <= px(width));
             assert!(footer.bottom() <= px(height));
-            for selector in ["panel-model", "panel-login"] {
+            for selector in ["panel-model"] {
                 let bounds = vcx.debug_bounds(selector).unwrap();
                 assert!(
                     bounds.left() >= footer.left() && bounds.right() <= footer.right(),
@@ -112,15 +112,16 @@ fn narrow_short_panels_keep_composer_and_footer_controls_visible(cx: &mut gpui::
             }
             let identity = vcx.debug_bounds("panel-identity").unwrap();
             let model = vcx.debug_bounds("panel-model").unwrap();
-            let login = vcx.debug_bounds("panel-login").unwrap();
+            let login = vcx.debug_bounds("panel-login");
             assert!(
-                model.left() >= identity.left() && login.right() <= identity.right(),
+                model.left() >= identity.left() && login.map_or(true, |login| login.right() <= identity.right()),
                 "{width}x{height} fresh={fresh}: {model:?} {login:?} {identity:?}"
             );
-            assert!(
-                model.right() <= login.left(),
-                "identity controls must not overlap"
-            );
+            if let Some(login) = login {
+                assert!(login.size.width > px(20.) && model.right() <= login.left(), "identity controls must not overlap");
+            } else {
+                assert!(width >= 480., "only a narrow side pane can hide the account control");
+            }
             let build = vcx.debug_bounds("panel-build").unwrap();
             // Build metadata yields space in the route line below the card.
             assert!(

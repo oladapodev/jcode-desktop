@@ -515,6 +515,9 @@ pub struct Panel {
     kept_changes: HashSet<String>,
     /// The wide side pane shows the session's edited files, not the plan.
     side_pane_changes: bool,
+    /// Last painted width of this panel's surface, so the plan inspector only
+    /// opens when the pane itself (not just the window) has room for it.
+    surface_width: Option<f32>,
     image_preview_zoom: f32,
     image_preview_scroll: gpui::ScrollHandle,
     image_preview_drag: Option<gpui::Point<gpui::Pixels>>,
@@ -956,6 +959,9 @@ impl Panel {
             && session_id == "screenshot-fixture"
             && fixture.as_deref() != Some("empty"))
             .then(proto_fixture::items);
+        // The home shot keeps the demo's model and account, without items.
+        let proto_meta = proto_fixture.is_some()
+            || (proto_fixture::enabled() && session_id == "screenshot-fixture");
         let stress_fixture = (proto_fixture::stress() && session_id == "screenshot-fixture")
             .then(proto_fixture::stress_items);
         let activity_status = if crate::harness::screenshot_mode() {
@@ -975,14 +981,14 @@ impl Panel {
             working_dir,
             status: activity_status.into(),
             connection_phase: String::new(),
-            model: if proto_fixture.is_some() {
+            model: if proto_meta {
                 Some(proto_fixture::MODEL.into())
             } else {
                 usage_fixture.then(|| "gpt-5.6-sol".into())
             },
-            provider: (usage_fixture || proto_fixture.is_some()).then(|| "openai".into()),
-            auth_method: (usage_fixture || proto_fixture.is_some()).then(|| "oauth".into()),
-            reasoning_effort: if proto_fixture.is_some() {
+            provider: (usage_fixture || proto_meta).then(|| "openai".into()),
+            auth_method: (usage_fixture || proto_meta).then(|| "oauth".into()),
+            reasoning_effort: if proto_meta {
                 Some("medium".into())
             } else {
                 usage_fixture.then(|| "high".into())
@@ -1029,6 +1035,7 @@ impl Panel {
             edit_previews: diff_review::EditPreviews::default(),
             kept_changes: HashSet::new(),
             side_pane_changes: false,
+            surface_width: None,
             image_preview_zoom: 1.0,
             image_preview_scroll: gpui::ScrollHandle::new(),
             image_preview_drag: None,
@@ -4714,6 +4721,7 @@ impl Render for Panel {
             latest_todo.filter(|payload| !payload.todos.is_empty() && publish_tracker.is_none());
         let wide_plan = pinned_todo.is_some()
             && window.viewport_size().width >= px(1280.)
+            && self.surface_width.is_none_or(|width| width >= PLAN_PANE_MIN_SURFACE)
             && !self.image_pane_open;
         let has_pinned_todo = pinned_todo.is_some() || publish_tracker.is_some();
         // A separate virtual row keeps activity below text, reasoning, and tools.
@@ -5404,6 +5412,9 @@ impl Render for Panel {
             .children(self.render_image_preview(window, cx))
             .children(self.render_diff_review(cx))
             .children(self.render_login_picker(window, cx))
+            .when(!wide_plan, |el| {
+                el.child(surface_width_observer(cx.entity().downgrade(), self.surface_width))
+            })
             .into_any_element();
 
         // On a wide window, the plan is an inspector beside the chat instead
@@ -5422,8 +5433,10 @@ impl Render for Panel {
                 let maximize_review = self.latest_change_review(cx);
                 return div()
                     .size_full()
+                    .relative()
                     .flex()
                     .overflow_hidden()
+                    .child(surface_width_observer(cx.entity().downgrade(), self.surface_width))
                     .child(div().flex_1().min_w_0().h_full().child(chat))
                     .child(
                         div()
@@ -6643,6 +6656,33 @@ fn acknowledge_next(
     if let Some(index) = pending.pop_front() {
         accepted.insert(index, now);
     }
+}
+
+/// Narrowest pane that fits the 365px plan inspector beside a readable chat.
+const PLAN_PANE_MIN_SURFACE: f32 = 940.;
+
+/// Records the panel surface width after layout. Both plan layouts fill the
+/// whole surface, so toggling between them never changes what is measured.
+fn surface_width_observer(panel: gpui::WeakEntity<Panel>, last: Option<f32>) -> impl IntoElement {
+    gpui::canvas(
+        |_, _, _| (),
+        move |bounds, _, _, cx| {
+            let width = f32::from(bounds.size.width);
+            if last.is_none_or(|last| (last - width).abs() > 0.5) {
+                let panel = panel.clone();
+                cx.defer(move |cx| {
+                    let _ = panel.update(cx, |panel, cx| {
+                        if panel.surface_width != Some(width) {
+                            panel.surface_width = Some(width);
+                            cx.notify();
+                        }
+                    });
+                });
+            }
+        },
+    )
+    .absolute()
+    .size_full()
 }
 
 /// Keep a block short by keeping its head and tail: for command output the

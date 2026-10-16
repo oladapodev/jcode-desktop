@@ -189,6 +189,10 @@ fn greeting() -> String {
 /// Branch checked out in the nearest enclosing repository, read from `.git`
 /// (never by spawning Git) and cached briefly so rendering stays cheap.
 fn git_branch(directory: &str) -> Option<String> {
+    // The prototype demo's projects are not real checkouts on the render host.
+    if crate::panel::proto_fixture::enabled() && directory.starts_with("/home/dev/Desktop/") {
+        return Some("master".into());
+    }
     thread_local! {
         static CACHE: RefCell<HashMap<String, (Instant, Option<String>)>> = RefCell::new(HashMap::new());
     }
@@ -530,7 +534,7 @@ impl Panel {
                                 .items_center()
                                 .gap(px(12.))
                                 .cursor_pointer()
-                                .when(index > 0, |el| el.border_t_1().border_color(theme.PANEL_BORDER))
+                                .when(index > 0, |el| el.border_t_1().border_color(theme.INPUT_BORDER))
                                 .hover(|el| el.bg(Theme::global().USER_BG))
                                 .font_family(theme.FONT_UI)
                                 .child(div().size(px(7.)).flex_none().rounded_full().bg(dot))
@@ -578,7 +582,7 @@ impl Panel {
         let viewport = f32::from(window.viewport_size().height);
         // Short windows keep only the composer and its context in view.
         let compact = viewport < 400.;
-        let top = if compact { 12. } else { (viewport * 0.09 - 52.).clamp(16., 72.).round() };
+        let top = if compact { 12. } else { (viewport * 0.09 - 60.).clamp(16., 64.).round() };
         let recents = self.home_recents(cx);
         let mut working = 0;
         let mut waiting = 0;

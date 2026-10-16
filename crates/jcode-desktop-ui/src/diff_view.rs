@@ -452,10 +452,13 @@ impl DiffView {
             .when(line.kind == LineKind::Meta, |el| {
                 el.text_color(theme.TEXT_FAINT)
             })
-            .when(!self.split || side == "old", |el| {
+            .when(self.embedded && !self.split, |el| {
+                el.child(number(line.new_line.or(line.old_line), "unified"))
+            })
+            .when(!self.embedded && !self.split || self.split && side == "old", |el| {
                 el.child(number(line.old_line, "old"))
             })
-            .when(!self.split || side == "new", |el| {
+            .when(!self.embedded && !self.split || self.split && side == "new", |el| {
                 el.child(number(line.new_line, "new"))
             })
             .child(
@@ -470,6 +473,7 @@ impl DiffView {
                     .min_w_0()
                     .flex_1()
                     .pr_2()
+                    .when(self.embedded && tint.is_some(), |el| el.border_l_1().border_color(tint.unwrap()).pl_1())
                     .child(div().when(!self.wrap, |el| el.whitespace_nowrap()).child(text))
                     .when(clipped, |el| el.child(div()
                         .debug_selector(move || notice_selector.clone())
@@ -496,7 +500,7 @@ impl DiffView {
             )
             .width
             + px(4.))
-        .max(px(34.));
+        .max(px(if self.embedded { 44. } else { 34. }));
         let selector = format!("diff-file-{index}");
         let group: SharedString = format!("diff-file-group-{index}").into();
         // The directory reads faint and the file name normal, like the
@@ -527,13 +531,13 @@ impl DiffView {
                             .gap_1()
                             .rounded(px(10.))
                             .hover(|el| el.bg(theme.TOOL_BG))
-                            .child(self.control(
+                            .when(!self.embedded, |el| el.child(self.control(
                                 format!("diff-collapse-{index}"),
                                 if state.collapsed { "▸" } else { "▾" },
                                 false,
                                 Control::Collapse(index),
                                 cx,
-                            ))
+                            )))
                             .child(
                                 div()
                                     .min_w_0()
@@ -553,7 +557,7 @@ impl DiffView {
                                             )]),
                                     ),
                             )
-                            .child(
+                            .when(!self.embedded, |el| el.child(
                                 div()
                                     .flex()
                                     .flex_row()
@@ -576,8 +580,8 @@ impl DiffView {
                                         Control::CopyPath(index),
                                         cx,
                                     )),
-                            )
-                            .when(!matches!(file.kind.as_str(), "Edit" | "Modified"), |el| {
+                            ))
+                            .when(!self.embedded && !matches!(file.kind.as_str(), "Edit" | "Modified"), |el| {
                                 el.child(
                                     div()
                                         .flex_none()
@@ -586,7 +590,7 @@ impl DiffView {
                                         .child(file.kind.clone()),
                                 )
                             })
-                            .child(stats(state.counts))
+                            .when(!self.embedded, |el| el.child(stats(state.counts)))
                             .when(self.embedded, |el| el
                                 .child(self.control("diff-unified", "Unified", !self.split, Control::Unified, cx))
                                 .child(self.control("diff-split", "Split", self.split, Control::Split, cx))
@@ -688,7 +692,7 @@ impl DiffView {
                                 None,
                             )
                             .width;
-                        let gutter = gutter_width * if self.split { 1. } else { 2. } + px(26.);
+                        let gutter = gutter_width * if self.split || self.embedded { 1. } else { 2. } + px(26.);
                         width = width.max((measured + gutter) * if self.split { 2. } else { 1. });
                     }
                 }
@@ -706,12 +710,9 @@ impl DiffView {
             body =
                 body.child(match row {
                     Row::Header(hunk) => div()
-                        .px_3()
-                        .pt_1()
-                        .pb_0p5()
-                        .text_size(px(11.5))
-                        .text_color(theme.TEXT_FAINT)
-                        .child(file.hunks[*hunk].header.clone())
+                        .when(!self.embedded, |el| el.px_3().pt_1().pb_0p5()
+                            .text_size(px(11.5)).text_color(theme.TEXT_FAINT)
+                            .child(file.hunks[*hunk].header.clone()))
                         .into_any_element(),
                     Row::Fold { hunk, start, end } => self.control(
                         format!("diff-reveal-{index}-{hunk}-{start}"),
