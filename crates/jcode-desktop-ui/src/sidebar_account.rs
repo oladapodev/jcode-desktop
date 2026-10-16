@@ -41,6 +41,13 @@ impl JcodeAccount {
                 plan: Some("Pro"),
             };
         }
+        if crate::panel::proto_fixture::enabled() {
+            return Self {
+                signed_in: true,
+                email: Some("dev@example.com".into()),
+                plan: Some("Pro"),
+            };
+        }
         let value = |key| {
             load_env_value_from_env_or_config(key, subscription::JCODE_ENV_FILE)
                 .map(|value| value.trim().to_owned())
@@ -119,10 +126,8 @@ impl Workspace {
             .id("sidebar-account-area")
             .flex_none()
             .px_2()
-            .pt(px(6.0))
+            .pt(px(2.0))
             .pb_2()
-            .border_t_1()
-            .border_color(theme.PANEL_BORDER)
             .flex()
             .flex_col()
             .gap(px(4.0))
@@ -181,13 +186,13 @@ impl Workspace {
                             .justify_center()
                             .rounded_full()
                             .bg(if signed_in {
-                                theme.ACCENT_DIM
+                                theme.ACCENT
                             } else {
                                 theme.PANEL_BG
                             })
                             .text_size(px(12.0))
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(ink)
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_color(if signed_in { theme.BG } else { ink })
                             .child(account.initial(show_email)),
                     )
                     .child(
@@ -221,10 +226,12 @@ impl Workspace {
                             ),
                     )
                     .children(account.plan.map(|plan| {
-                        div().flex_none().px(px(8.0)).h(px(21.0))
-                            .flex().items_center().rounded_full().bg(theme.PANEL_BG)
-                            .font_family(theme.FONT_UI).text_size(px(10.5))
-                            .text_color(theme.TEXT_DIM).child(plan)
+                        div().flex_none().px(px(7.0)).h(px(20.0))
+                            .flex().items_center().rounded_full()
+                            .bg(theme.ACCENT_DIM).border_1().border_color(theme.ACCENT.opacity(0.25))
+                            .font_family(theme.FONT_UI).text_size(px(11.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.ACCENT).child(plan)
                     })),
             )
             .into_any_element()

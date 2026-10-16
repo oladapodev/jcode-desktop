@@ -151,7 +151,7 @@ mod tests {
                 .expect("response card painted");
             let transcript = vcx.debug_bounds("transcript").expect("transcript painted");
             assert!(
-                card.size.width >= transcript.size.width * 0.85,
+                card.size.width >= transcript.size.width.min(px(super::super::READING_COLUMN_WIDTH)) * 0.85,
                 "card should fill transcript: {card:?} {transcript:?}"
             );
             assert!(

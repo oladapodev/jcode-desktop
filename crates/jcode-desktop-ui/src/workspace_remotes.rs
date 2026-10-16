@@ -841,37 +841,55 @@ impl Workspace {
         };
         div()
             .debug_selector(|| "machine-destination-switcher".into())
+            .group("machine-destination-switcher")
             .flex_none()
             .mx(px(10.0))
-            .my(px(3.0))
-            .px(px(10.0))
-            .py(px(4.0))
+            .mt(px(10.0))
+            .mb(px(4.0))
+            .px(px(8.0))
+            .py(px(8.0))
             .flex()
             .flex_col()
             .gap(px(1.0))
-            .rounded(px(12.0))
+            .rounded(px(10.0))
             .bg(theme.HEADER_BG)
+            .border_1()
+            .border_color(theme.PANEL_BORDER)
             .cursor_pointer()
             .hover(|el| el.bg(Theme::global().USER_BG))
             .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
                 this.open_machines(window, cx);
             }))
-            .child(div().text_size(px(10.5)).text_color(theme.TEXT_FAINT)
-                .child("New sessions run on"))
             .child(
                 div()
+                    .relative()
                     .flex()
                     .items_center()
                     .gap(px(8.0))
-                    .child(gpui::svg().data(include_bytes!("../../../assets/icons/computer.svg").as_slice())
-                        .size(px(15.0)).text_color(theme.TEXT_DIM))
+                    // Machine mark (prototype `MachineMark`): boxed glyph with
+                    // a status pip for the connection.
+                    .child(div().relative().flex_none().size(px(28.0)).flex().items_center().justify_center()
+                        .rounded(px(8.0)).bg(theme.USER_BG).border_1().border_color(theme.PANEL_BORDER_FOCUS)
+                        .child(gpui::svg().data(include_bytes!("../../../assets/icons/computer.svg").as_slice())
+                            .size(px(14.0)).text_color(if host.is_none() { theme.ACCENT } else { theme.TEXT_DIM }))
+                        .child(div().absolute().right(px(-3.0)).bottom(px(-3.0)).size(px(9.0)).rounded_full()
+                            .border_2().border_color(theme.HEADER_BG)
+                            .bg(if self.remotes.failed { theme.WARN } else { theme.OK })))
                     .child(div().id("machines-picker-button")
                         .debug_selector(|| "machines-picker-button".into())
-                        .flex_1().text_size(px(12.5)).font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(theme.TEXT).child(destination))
+                        .flex_1().min_w_0().flex().flex_col().whitespace_nowrap()
+                        .child(div().min_w_0().truncate().text_size(px(11.0)).line_height(px(14.0)).text_color(theme.TEXT_FAINT)
+                            .child("New sessions run on"))
+                        .child(div().min_w_0().truncate().text_size(px(13.5)).line_height(px(17.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.TEXT).child(destination)))
+                    // Quick destinations stay out of the way until the card is
+                    // hovered; at rest the up-down chevron sits in their place.
+                    .child(div().flex_none().flex().items_center().gap(px(2.0))
+                        .opacity(0.0).group_hover("machine-destination-switcher", |el| el.opacity(1.0))
                     .child(div().id("machine-destination-local")
                         .debug_selector(|| "machine-destination-local".into())
-                        .size(px(20.0)).flex_none().flex().items_center().justify_center()
+                        .size(px(18.0)).flex_none().flex().items_center().justify_center()
                         .rounded(px(6.0)).cursor_pointer()
                         .hover(|el| el.bg(Theme::global().PANEL_BG))
                         .tooltip(|_, cx| cx.new(|_| HeaderTooltip("Use this laptop for new sessions".into())).into())
@@ -884,7 +902,7 @@ impl Workspace {
                         })))
                     .child(div().id("machine-destination-cloud")
                         .debug_selector(|| "machine-destination-cloud".into())
-                        .size(px(20.0)).flex_none().flex().items_center().justify_center()
+                        .size(px(18.0)).flex_none().flex().items_center().justify_center()
                         .rounded(px(6.0)).cursor_pointer()
                         .hover(|el| el.bg(Theme::global().PANEL_BG))
                         .tooltip(|_, cx| cx.new(|_| HeaderTooltip("Use Jcode Cloud for new sessions".into())).into())
@@ -895,8 +913,11 @@ impl Workspace {
                             cx.stop_propagation();
                             this.set_default_machine(Some(MANAGED_CLOUD_HOST.into()), cx);
                         })))
-                    .child(self.render_default_directory_button(cx))
-                    .child(div().text_color(theme.TEXT_FAINT).child("⌄")),
+                    .child(self.render_default_directory_button(cx)))
+                    .child(div().absolute().right(px(4.0)).top_0().bottom_0().flex().items_center()
+                        .group_hover("machine-destination-switcher", |el| el.opacity(0.0))
+                        .child(gpui::svg().flex_none().size(px(14.0)).text_color(theme.TEXT_FAINT)
+                        .data(br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>"#))),
             )
             .when(self.remotes.failed, |el| {
                 el.child(
@@ -1214,7 +1235,7 @@ impl Workspace {
             .child(
                 div().flex_1().min_w_0().flex().flex_col().gap(px(5.0))
                     .child(div().flex().items_center().gap(px(8.0))
-                        .child(div().min_w_0().truncate().text_size(px(14.0))
+                        .child(div().min_w(px(108.0)).truncate().text_size(px(14.0))
                             .font_weight(gpui::FontWeight::SEMIBOLD).child(label))
                         .child(div().id(("machine-kind", index))
                             .when(detail.is_some(), |el| el.debug_selector(|| "cloud-alpha-status".into()))

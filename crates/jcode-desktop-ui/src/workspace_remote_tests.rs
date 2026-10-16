@@ -53,7 +53,8 @@ fn sidebar_destination_card_keeps_default_shortcuts_without_starting_sessions(
     let ssh = vcx.debug_bounds("machines-picker-button").unwrap();
     let card = vcx.debug_bounds("machine-destination-switcher").unwrap();
     assert_eq!(local.origin.y, cloud.origin.y);
-    assert_eq!(cloud.origin.y, ssh.origin.y);
+    // The picker label is two lines; it shares the row by its centre.
+    assert!((cloud.center().y - ssh.center().y).abs() <= px(1.0));
     assert!(ssh.right() <= local.left());
     assert!(local.right() <= cloud.left());
     assert!(local.left() >= card.left() && cloud.right() <= card.right());

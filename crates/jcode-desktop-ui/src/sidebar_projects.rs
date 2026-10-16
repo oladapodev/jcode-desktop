@@ -9,6 +9,9 @@ mod dock;
 /// Key for sessions without any working directory.
 pub(super) const OTHER: &str = "";
 
+const CHEVRON_RIGHT_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>"#;
+const CHEVRON_DOWN_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Project {
     pub key: String,
@@ -277,16 +280,15 @@ impl Workspace {
                     cx.notify();
                 }),
             )
-            .child(div().flex_none().w(px(13.0)).text_size(px(14.0))
-                .text_color(theme.TEXT_FAINT)
-                .child(if collapsed { "›" } else { "⌄" }))
+            .child(gpui::svg().flex_none().size(px(13.0)).text_color(theme.TEXT_FAINT)
+                .data(if collapsed { CHEVRON_RIGHT_ICON } else { CHEVRON_DOWN_ICON }))
             .child(
                 div()
                     .flex_shrink(1.0)
                     .min_w_0()
                     .truncate()
                     .debug_selector(move || format!("sidebar-project-label-{index}"))
-                    .text_size(px(12.5))
+                    .text_size(px(13.5))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.TEXT)
                     .child(project.label.clone()),
@@ -309,8 +311,12 @@ impl Workspace {
                     .child(div().min_w_0().truncate().child(branch))
             }))
             .child(div().flex_1())
+            // The count is detail: it appears on hover, like the branch in the
+            // prototype, so resting rows stay calm.
             .child(div().flex_none().pr(px(4.0)).text_size(px(11.0))
-                .text_color(theme.TEXT_FAINT).child(count.to_string()))
+                .text_color(theme.TEXT_FAINT).opacity(0.0)
+                .group_hover(group, |el| el.opacity(1.0))
+                .child(count.to_string()))
             // Actions overlay the row end on hover instead of reserving width.
             .when(git || local.is_some(), |el| {
                 let mut actions = sidebar_worktrees::hover_actions(group, 24.0);

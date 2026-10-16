@@ -170,8 +170,9 @@ impl Workspace {
             .debug_selector(|| "workspace-version".into())
             .absolute()
             .left(px(4.0))
-            // Same size, radius and type as the header status chip beside it.
-            .top(px(3.0))
+            // Same size, radius and type as the header status chip beside it,
+            // centred in the header band.
+            .top(px((FOLDER_CONTENT_INSET - PILL_HEIGHT) / 2.0))
             .w(px(width - 4.0))
             .h(px(PILL_HEIGHT))
             .rounded(px(7.0))

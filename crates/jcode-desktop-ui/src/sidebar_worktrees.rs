@@ -79,6 +79,27 @@ pub(super) fn icon(data: &'static [u8], size: f32) -> gpui::AnyElement {
         .into_any_element()
 }
 
+/// A small keycap (prototype `Kbd`): 18px, slab fill, seam outline.
+pub(super) fn keycap(label: &'static str) -> gpui::Div {
+    let theme = Theme::global();
+    div()
+        .h(px(18.0))
+        .min_w(px(18.0))
+        .px(px(4.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(5.0))
+        .border_1()
+        .border_color(theme.PANEL_BORDER_FOCUS)
+        .bg(theme.USER_BG)
+        .font_family(theme.FONT_UI)
+        .text_size(px(10.5))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(theme.TEXT_DIM)
+        .child(label)
+}
+
 impl Workspace {
     pub(super) fn render_sidebar_brand(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = Theme::global();
@@ -94,7 +115,7 @@ impl Workspace {
                 .child(div().flex().items_center().gap(px(4.0))
                     .when(self.connected, |el| el.child(div().size(px(5.0))
                         .rounded_full().bg(theme.OK)))
-                    .child(div().font_family(theme.FONT_UI).text_size(px(10.5))
+                    .child(div().font_family(theme.FONT_UI).text_size(px(11.0))
                         .text_color(theme.TEXT_FAINT)
                         .child(if self.connected { "Synced" } else { "Connecting…" }))))
             .child(div().id("sidebar-hide").debug_selector(|| "sidebar-hide".into())
@@ -327,8 +348,11 @@ impl Workspace {
                 .justify_center()
                 .rounded(px(10.0))
                 .bg(theme.HEADER_BG)
+                .border_1()
+                .border_color(theme.PANEL_BORDER)
+                .text_color(theme.TEXT_DIM)
                 .cursor_pointer()
-                .hover(|el| el.bg(Theme::global().PANEL_BG))
+                .hover(|el| el.bg(Theme::global().USER_BG))
                 .tooltip(move |_, cx| cx.new(|_| remotes::HeaderTooltip(tip.into())).into())
                 .child(glyph)
         };
@@ -353,18 +377,22 @@ impl Workspace {
                     .flex()
                     .items_center()
                     .gap(px(8.0))
-                    .rounded(px(9.0))
+                    .rounded(px(10.0))
                     .cursor_pointer()
                     .bg(theme.HEADER_BG)
-                    .text_size(px(12.5))
+                    .border_1()
+                    .border_color(theme.PANEL_BORDER_FOCUS)
+                    .text_size(px(13.5))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.TEXT)
                     .hover(|el| el.bg(Theme::global().USER_BG))
                     .tooltip(|_, cx| cx.new(|_| remotes::HeaderTooltip("New session".into())).into())
-                    .child(icon(NEW_SESSION_ICON, 14.0))
+                    // The primary action carries the accent, as in the prototype.
+                    .child(gpui::svg().data(NEW_SESSION_ICON).size(px(15.0)).flex_none().text_color(theme.ACCENT))
                     .child(div().min_w_0().truncate().child("New session"))
                     .child(div().flex_1())
-                    .child(div().text_size(px(10.5)).text_color(theme.TEXT_FAINT).child("Ctrl N"))
+                    .child(div().flex_none().flex().gap(px(2.0)).opacity(0.7)
+                        .child(keycap("Ctrl")).child(keycap("N")))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, window, cx| {
@@ -403,30 +431,44 @@ impl Workspace {
                 .h(px(32.0)).mx(px(10.0)).px(px(10.0))
                 .flex().items_center().gap(px(10.0))
                 .rounded(px(8.0)).cursor_pointer()
-                .when(active, |el| el.bg(theme.HEADER_BG).text_color(theme.TEXT))
+                .when(active, |el| el.bg(theme.USER_BG).text_color(theme.TEXT))
                 .when(!active, |el| el.text_color(theme.TEXT_DIM))
-                .hover(|el| el.bg(Theme::global().HEADER_BG).text_color(Theme::global().TEXT))
-                .text_size(px(13.0)).font_family(theme.FONT_UI)
-                .child(icon(glyph, 15.0)).child(label)
+                .hover(|el| el.bg(Theme::global().USER_BG).text_color(Theme::global().TEXT))
+                .text_size(px(13.5)).font_family(theme.FONT_UI)
+                .child(gpui::svg().data(glyph).size(px(15.0)).flex_none()
+                    .text_color(if active { theme.ACCENT } else { theme.TEXT_DIM }))
+                .child(label)
         };
+        // Live sessions, the Agents row's only badge (prototype "3 live").
+        let live = self
+            .slots
+            .iter()
+            .filter(|slot| !slot.closing && slot.panel.read(cx).tab_ring().is_some_and(|ring| ring.working()))
+            .count();
         div().flex_none().w_full().flex().flex_col()
             .child(action_row)
-            .when(!cfg!(test), |el| el.child(nav_row("sidebar-sessions-tab", "Workspace", HIDE_SIDEBAR_ICON, self.sidebar_view == SidebarView::Sessions)
+            .when(!cfg!(test), |el| el.child(nav_row("sidebar-sessions-tab", "Workspace", HIDE_SIDEBAR_ICON, self.sidebar_view == SidebarView::Sessions && !self.agents_view)
                 .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
                     this.sidebar_view = SidebarView::Sessions;
+                    this.close_agents_view(cx);
                     cx.notify();
                 }))))
-            .when(!cfg!(test), |el| el.child(nav_row("sidebar-agents-nav", "Agents", AGENTS_ICON, false)
-                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
-                    this.toggle_overview(&ToggleOverview, window, cx);
+            .when(!cfg!(test), |el| el.child(nav_row("sidebar-agents-nav", "Agents", AGENTS_ICON, self.agents_view)
+                .when(live > 0, |el| el.child(div().ml_auto()
+                    .text_size(px(11.5)).text_color(theme.ACCENT)
+                    .child(format!("{live} live"))))
+                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    this.show_agents_view(cx);
                 }))))
             .when(!cfg!(test), |el| el.child(nav_row("sidebar-machines-nav", "Machines", MACHINES_ICON, false)
                 .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, window, cx| {
+                    this.close_agents_view(cx);
                     this.open_machines(window, cx);
                 }))))
             .when(!cfg!(test), |el| el.child(nav_row("sidebar-settings-tab", "Apps & tools", APPS_ICON, self.sidebar_view == SidebarView::Settings)
                 .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
                     this.sidebar_view = SidebarView::Settings;
+                    this.close_agents_view(cx);
                     cx.notify();
                 }))))
             .child(div().mt(px(16.0)).px(px(20.0)).pb(px(4.0)).flex().items_center()

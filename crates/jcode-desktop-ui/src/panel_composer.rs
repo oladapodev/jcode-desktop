@@ -2,7 +2,7 @@
 use super::*;
 
 /// Pill height.
-pub(super) const TAB_HEIGHT: f32 = 28.;
+pub(super) const TAB_HEIGHT: f32 = 32.;
 /// Gap between the input and the pill row below it.
 const PILL_GAP: f32 = 0.;
 /// Distance from the input's right edge to the in-box voice button.
@@ -42,6 +42,16 @@ impl Panel {
             .map(str::trim)
             .filter(|effort| !effort.is_empty() && self.model.is_some())
             .map(str::to_string);
+        // Container query, as in the prototype: secondary chip labels drop
+        // (effort, then mode, then account) before any label is clipped.
+        let labels = chip_labels(
+            self.composer_width,
+            &model_label,
+            effort.as_deref().map(effort_label).as_deref(),
+            &account_label,
+        );
+        let (show_mode_label, show_effort_label, show_account_label, show_context) = labels;
+        let account_tooltip = account_label.clone();
         let remote_machine = (!screenshot_mode)
             .then(|| crate::harness::remote_host(&self.session_id))
             .flatten()
@@ -116,7 +126,8 @@ impl Panel {
             .gap_1()
             .pl(px(8.0))
             .pr(px(8.0))
-            .pb(px(9.0))
+            .pt(px(2.0))
+            .pb(px(8.0))
             .mt(px(PILL_GAP))
             .child(
                 div()
@@ -134,17 +145,16 @@ impl Panel {
                             .id("composer-attach")
                             .debug_selector(|| "composer-attach".into())
                             .flex_none()
-                            .size(px(30.))
+                            .size(px(TAB_HEIGHT))
                             .rounded_full()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(21.))
                             .text_color(theme.TEXT_DIM)
                             .cursor_pointer()
-                            .hover(|el| el.bg(theme.TOOL_BG).text_color(theme.TEXT))
+                            .hover(|el| el.bg(chip_hover_bg()).text_color(theme.TEXT))
                             .tooltip(|_, cx| cx.new(|_| super::usage::MeterTooltip("Reference a file with @, or paste an image".into())).into())
-                            .child("+")
+                            .child(chip_icon(PLUS_ICON, 17.))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 let input = this.input.clone();
                                 window.defer(cx, move |window, cx| {
@@ -159,8 +169,8 @@ impl Panel {
                     )
                     .when(!compact, |identity| identity.child(
                         composer_pill("composer-mode")
-                            .child("✦")
-                            .child("Agent")
+                            .child(chip_icon(ZAP_ICON, 14.))
+                            .when(show_mode_label, |el| el.child("Agent"))
                             .tooltip(|_, cx| cx.new(|_| super::usage::MeterTooltip("Agent mode: edits files and runs commands".into())).into()),
                     ))
                     .child(
@@ -174,8 +184,11 @@ impl Panel {
                                     m if m.contains("gemini") => "gemini",
                                     _ => "",
                                 };
-                                crate::accounts::logo(logo).map(|data| gpui::svg().data(data).size(px(14.)).text_color(theme.TEXT_DIM))
+                                crate::accounts::logo(logo).map(|data| gpui::svg().flex_none().data(data).size(px(14.)).text_color(theme.TEXT_DIM))
                             }))
+                            // No model yet: a neutral glyph keeps the chip's
+                            // icon + label + chevron shape.
+                            .when(self.model.is_none(), |el| el.child(chip_icon(MODEL_ICON, 14.)))
                             .child(
                                 div()
                                     .debug_selector(|| "panel-model-name".into())
@@ -183,7 +196,7 @@ impl Panel {
                                     .truncate()
                                     .child(model_label),
                             )
-                            .child("⌄")
+                            .child(chip_chevron())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.toggle_model_picker(window, cx);
                                 cx.stop_propagation();
@@ -193,9 +206,8 @@ impl Panel {
                         composer_pill("panel-model-effort")
                             .flex_shrink(3.)
                             .min_w(px(24.))
-                            .text_color(theme.TEXT_FAINT)
-                            .child(div().min_w_0().truncate().child("▂▄▆"))
-                            .child(div().min_w_0().truncate().child(effort))
+                            .child(effort_bars(effort_level(&effort)))
+                            .when(show_effort_label, |el| el.child(div().min_w_0().truncate().child(effort_label(&effort))))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.toggle_effort_picker(window, cx);
                                 cx.stop_propagation();
@@ -205,8 +217,10 @@ impl Panel {
                         composer_pill("panel-login")
                             .flex_shrink(2.)
                             .min_w(px(24.))
-                            .text_color(theme.TEXT_FAINT)
-                            .child(div().min_w_0().truncate().child(if compact { "•••".to_string() } else { account_label }))
+                            .when(!compact, |el| el.child(chip_icon(ACCOUNT_ICON, 14.)))
+                            .when(compact || show_account_label, |el| el.child(div().min_w_0().truncate().child(if compact { "•••".to_string() } else { account_label })))
+                            .when(!compact && show_account_label, |el| el.child(chip_chevron()))
+                            .when(!show_account_label, |el| el.tooltip(move |_, cx| cx.new(|_| super::usage::MeterTooltip(account_tooltip.clone().into())).into()))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.toggle_provider_picker(window, cx);
                                 cx.stop_propagation();
@@ -224,7 +238,7 @@ impl Panel {
                     .justify_end()
                     .gap_1()
                     .overflow_hidden()
-                    .children((!compact).then(|| self.render_context_meter()).flatten())
+                    .children((!compact && show_context).then(|| self.render_context_meter()).flatten())
                     .child(self.render_voice_tab(cx))
                     .children(self.render_publish_button(cx))
             )
@@ -242,6 +256,7 @@ impl Panel {
                 // One card: the editor on top, its controls on a row below.
                 div()
                     .debug_selector(|| "composer-card".into())
+                    .relative()
                     .w_full()
                     .min_w_0()
                     .flex()
@@ -261,7 +276,30 @@ impl Panel {
                             .min_w_0()
                             .child(self.render_voice_input_slot(cx)),
                     )
-                    .child(pills),
+                    .child(pills)
+                    .child({
+                        // Measure after paint for the chip label container query.
+                        let panel = cx.entity().downgrade();
+                        gpui::canvas(
+                            |_, _, _| (),
+                            move |bounds, _, _, cx| {
+                                let width = f32::from(bounds.size.width).round();
+                                let panel = panel.clone();
+                                cx.defer(move |cx| {
+                                    let Some(entity) = panel.upgrade() else { return };
+                                    if (entity.read(cx).composer_width - width).abs() < 0.5 {
+                                        return;
+                                    }
+                                    entity.update(cx, |panel, cx| {
+                                        panel.composer_width = width;
+                                        cx.notify();
+                                    });
+                                });
+                            },
+                        )
+                        .absolute()
+                        .size_full()
+                    }),
             )
             .child(
                 div()
@@ -282,7 +320,10 @@ impl Panel {
                             .items_center()
                             .gap_1()
                             .child("Running on")
-                            .child(remote_machine.unwrap_or_else(|| "This laptop".into()))
+                            // The machine name takes its kind colour (local = brass).
+                            .child(div().font_weight(gpui::FontWeight::MEDIUM)
+                                .when(remote_machine.is_none(), |el| el.text_color(theme.ACCENT))
+                                .child(remote_machine.unwrap_or_else(|| "This laptop".into())))
                             .children(location.map(|(name, detail)| {
                                 div()
                                     .debug_selector(|| "composer-location".into())
@@ -486,25 +527,139 @@ impl Panel {
     }
 }
 
-/// A compact rounded pill: flat text until hovered.
+/// Which optional chip parts fit a composer card `width` wide: mode label,
+/// effort label, account label, context ring. Secondary labels drop first so
+/// the model name never clips. `0` (not yet measured) shows everything.
+fn chip_labels(
+    width: f32,
+    model: &str,
+    effort: Option<&str>,
+    account: &str,
+) -> (bool, bool, bool, bool) {
+    if width <= 0. {
+        return (true, true, true, true);
+    }
+    // Inter 13px medium averages about 7.2px per character.
+    let text = |label: &str| label.chars().count() as f32 * 7.2;
+    // Padding, icon and gap, plus a chevron for pickers.
+    let picker = |label: &str| 59. + text(label);
+    // Attach, voice, send, row padding and gaps.
+    let fixed = 130.;
+    let model = picker(model);
+    let (mut mode, mut effort_label, mut account_label, mut context) = (true, true, true, true);
+    let used = |mode: bool, effort_label: bool, account_label: bool, context: bool| {
+        fixed
+            + model
+            + if mode { 76. } else { 34. }
+            + effort.map_or(0., |label| if effort_label { 43. + text(label) } else { 37. })
+            + if account_label { picker(account) } else { 34. }
+            + if context { 64. } else { 0. }
+    };
+    for step in 0..4 {
+        if used(mode, effort_label, account_label, context) <= width {
+            break;
+        }
+        match step {
+            0 => effort_label = false,
+            1 => context = false,
+            2 => mode = false,
+            _ => account_label = false,
+        }
+    }
+    (mode, effort_label, account_label, context)
+}
+
+/// A compact rounded chip (prototype `h-8 rounded-full px-2.5 text-sec
+/// font-medium text-dust hover:bg-lift`): icon + label (+ chevron), flat until
+/// hovered.
 pub(super) fn composer_pill(id: &'static str) -> gpui::Stateful<gpui::Div> {
     let theme = Theme::global();
     div()
         .id(id)
         .debug_selector(move || id.into())
         .h(px(TAB_HEIGHT))
-        .px(px(9.0))
+        .px(px(10.0))
         .flex()
         .items_center()
-        .gap_1p5()
+        .gap(px(6.0))
         .rounded_full()
-        .text_size(px(12.0))
+        .text_size(px(13.0))
         .font_weight(gpui::FontWeight::MEDIUM)
         .font_family(theme.FONT_UI)
         .text_color(theme.TEXT_DIM)
         .whitespace_nowrap()
         .cursor_pointer()
-        .hover(|el| el.text_color(theme.TEXT).bg(theme.TOOL_BG))
+        .hover(|el| el.text_color(theme.TEXT).bg(chip_hover_bg()))
+}
+
+const PLUS_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>"#;
+/// Agent mode (lucide `zap`).
+const ZAP_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>"#;
+/// Model chip before a model is chosen (lucide `sparkles`).
+const MODEL_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/></svg>"#;
+const ACCOUNT_ICON: &[u8] = include_bytes!("../../../assets/icons/account.svg");
+const CHEVRON_DOWN_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
+
+/// Hover fill shared by the composer's chips (prototype `lift`).
+fn chip_hover_bg() -> gpui::Rgba {
+    let theme = Theme::global();
+    theme.USER_BG.blend(theme.TEXT.opacity(0.06))
+}
+
+/// A chip glyph in the chip's resting colour (svg colour does not inherit).
+fn chip_icon(data: &'static [u8], size: f32) -> gpui::Svg {
+    gpui::svg()
+        .flex_none()
+        .data(data)
+        .size(px(size))
+        .text_color(Theme::global().TEXT_DIM)
+}
+
+fn chip_chevron() -> gpui::Svg {
+    gpui::svg()
+        .flex_none()
+        .data(CHEVRON_DOWN_ICON)
+        .size(px(13.0))
+        .text_color(Theme::global().TEXT_FAINT)
+}
+
+/// Bars lit for a reasoning effort, out of four.
+fn effort_level(effort: &str) -> usize {
+    match effort.trim().to_ascii_lowercase().as_str() {
+        "none" | "minimal" => 0,
+        "low" => 1,
+        "medium" => 2,
+        "high" => 3,
+        _ => 4,
+    }
+}
+
+/// `medium` reads `Medium`.
+fn effort_label(effort: &str) -> String {
+    let effort = effort.trim();
+    let mut chars = effort.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// Four rising bars, lit up to `lit` (prototype `EffortBars`).
+fn effort_bars(lit: usize) -> gpui::Div {
+    let theme = Theme::global();
+    div()
+        .flex_none()
+        .h(px(12.0))
+        .flex()
+        .items_end()
+        .gap(px(2.0))
+        .children((1..=4).map(|i| {
+            div()
+                .w(px(3.0))
+                .h(px(3.0 + i as f32 * 2.2))
+                .rounded(px(1.0))
+                .bg(if i <= lit { theme.TEXT_DIM } else { theme.PANEL_BORDER_FOCUS })
+        }))
 }
 
 /// `claude-opus-4-8` reads `Opus 4.8`. The provider already appears in the

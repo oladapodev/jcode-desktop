@@ -149,6 +149,8 @@ pub(crate) use tab_outline::TabRing;
 mod tool_streaming;
 #[path = "panel_run_summary.rs"]
 mod run_summary;
+#[path = "panel_proto_fixture.rs"]
+pub(crate) mod proto_fixture;
 #[path = "panel_usage.rs"]
 pub(crate) mod usage;
 #[path = "panel_voice.rs"]
@@ -162,7 +164,7 @@ pub(crate) type SessionOpener =
 // outside the scrolling list so it remains visible even while reading history.
 const TRANSCRIPT_BOTTOM_GAP: f32 = 12.0;
 /// Widest the transcript and composer grow; wider panels centre them.
-pub(crate) const READING_COLUMN_WIDTH: f32 = 780.0;
+pub(crate) const READING_COLUMN_WIDTH: f32 = 652.0;
 
 fn command_unavailable_message(input: &str) -> String {
     let name = input.split_whitespace().next().unwrap_or(input);
@@ -540,6 +542,9 @@ pub struct Panel {
     /// Height of the floating composer dock. The transcript scrolls beneath
     /// it, padded by this much so the live end still clears the composer.
     composer_dock_height: f32,
+    /// Measured composer card width (0 until painted). Narrow cards drop
+    /// secondary chip labels, like the prototype's container queries.
+    composer_width: f32,
     /// Last draft emptiness seen, so typing repaints the panel only when the
     /// send button changes.
     composer_has_draft: bool,
@@ -937,6 +942,9 @@ impl Panel {
             );
         let usage_fixture = crate::harness::screenshot_mode()
             && matches!(fixture.as_deref(), Some("tokens" | "orb-todos"));
+        // Prototype demo data fills only the first panel's session.
+        let proto_fixture = (proto_fixture::enabled() && session_id == "screenshot-fixture")
+            .then(proto_fixture::items);
         let activity_status = if crate::harness::screenshot_mode() {
             match fixture.as_deref() {
                 Some("orb-working" | "orb-todos") => "running",
@@ -954,15 +962,27 @@ impl Panel {
             working_dir,
             status: activity_status.into(),
             connection_phase: String::new(),
-            model: usage_fixture.then(|| "gpt-5.6-sol".into()),
-            provider: usage_fixture.then(|| "openai".into()),
-            auth_method: usage_fixture.then(|| "oauth".into()),
-            reasoning_effort: usage_fixture.then(|| "high".into()),
+            model: if proto_fixture.is_some() {
+                Some(proto_fixture::MODEL.into())
+            } else {
+                usage_fixture.then(|| "gpt-5.6-sol".into())
+            },
+            provider: (usage_fixture || proto_fixture.is_some()).then(|| "openai".into()),
+            auth_method: (usage_fixture || proto_fixture.is_some()).then(|| "oauth".into()),
+            reasoning_effort: if proto_fixture.is_some() {
+                Some("medium".into())
+            } else {
+                usage_fixture.then(|| "high".into())
+            },
             pending_effort: None,
             pending_save_requests: 0,
-            context_tokens: usage_fixture.then_some(100_000),
+            context_tokens: if proto_fixture.is_some() {
+                Some(proto_fixture::context_tokens())
+            } else {
+                usage_fixture.then_some(100_000)
+            },
             response_stats: response_stats::Tracker::default(),
-            items: demo_items(fixture.as_deref()).into(),
+            items: proto_fixture.unwrap_or_else(|| demo_items(fixture.as_deref())).into(),
             streaming_text: if streaming_fixture {
                 "I’m checking the implementation and updating the active panel indicators as the response arrives…".into()
             } else {
@@ -1019,6 +1039,7 @@ impl Panel {
             stick_to_bottom: true,
             transcript_end_visible: true,
             composer_dock_height: 0.0,
+            composer_width: 0.0,
             composer_has_draft: false,
             steady_activity: Default::default(),
             transcript_end_pad: 0.0,
@@ -5214,7 +5235,7 @@ impl Render for Panel {
                     .pt_1()
                     .mb_2()
                     .max_h(px(
-                        (f32::from(window.viewport_size().height) * 0.3).min(280.)
+                        (f32::from(window.viewport_size().height) * 0.22).clamp(96., 168.)
                     ))
                     .overflow_y_scroll()
                     .flex()
@@ -6380,25 +6401,14 @@ fn render_todo_card_with_style(
                                     _ if pinned => Theme::global().TEXT_USER,
                                     _ => Theme::global().TEXT,
                                 })
-                                .relative()
+                                .when(todo.status == "completed", |text| text.line_through())
                                 .child(text_selection::plain(
                                     selection.clone(),
                                     format!("{key}-task-{group_index}-{todo_index}"),
                                     todo.content.clone(),
                                     window,
                                     cx,
-                                ))
-                                .when(todo.status == "completed", |text| {
-                                    text.child(
-                                        div()
-                                            .absolute()
-                                            .top(px(9.))
-                                            .left_0()
-                                            .w(px((todo.content.chars().count() as f32 * 6.2).min(280.)))
-                                            .h(px(1.))
-                                            .bg(Theme::global().PANEL_BORDER),
-                                    )
-                                }),
+                                )),
                         ),
                 );
             }
@@ -6498,6 +6508,7 @@ fn render_todo_card_with_style(
                 div()
                     .w_full()
                     .h(px(5.))
+                    .mb_2()
                     .rounded_full()
                     .bg(Theme::global().USER_BG)
                     .child(div().h_full().w(relative(progress)).rounded_full().bg(Theme::global().ACCENT)),

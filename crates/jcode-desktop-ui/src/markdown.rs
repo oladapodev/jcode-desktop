@@ -1232,10 +1232,6 @@ fn code_block_with_selection(
 ) -> gpui::AnyElement {
     let (plain, highlights) = highlight_code(body, lang);
     let line_count = plain.lines().count().max(1);
-    let gutter = (1..=line_count)
-        .map(|n| n.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
     let mut style = window.text_style();
     style.font_family = Theme::global().FONT_MONO.into();
     style.font_size = px(12.5).into();
@@ -1282,7 +1278,7 @@ fn code_block_with_selection(
                     .gap_2()
                     .pl_4()
                     .pr_2()
-                    .pt_1p5()
+                    .pt(px(10.))
                     .text_size(px(11.5))
                     .text_color(Theme::global().TEXT_FAINT)
                     .font_family(Theme::global().FONT_MONO)
@@ -1301,7 +1297,7 @@ fn code_block_with_selection(
                             .cursor_pointer()
                             .font_family(Theme::global().FONT_UI)
                             .text_color(Theme::global().TEXT_FAINT)
-                            .opacity(0.55)
+                            .opacity(0.)
                             .group_hover(group, |el| el.opacity(1.0))
                             .hover(|el| {
                                 el.text_color(Theme::global().TEXT)
@@ -1321,27 +1317,15 @@ fn code_block_with_selection(
                 .flex()
                 .flex_row()
                 .pl_4()
-                .pr_3()
-                .pt(px(if show_header { 4. } else { 10. }))
-                .pb(px(10.))
+                .pr_4()
+                .pt(px(if show_header { 6. } else { 12. }))
+                .pb(px(12.))
                 .gap_3()
-                .when(line_count > 1, |el| {
-                    el.child(
-                        div()
-                            .flex_none()
-                            .font_family(Theme::global().FONT_MONO)
-                            .text_size(px(12.5))
-                            .line_height(relative(1.5))
-                            .text_color(Theme::global().CODE_GUTTER)
-                            .text_right()
-                            .child(gutter),
-                    )
-                })
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .line_height(relative(1.5))
+                        .line_height(relative(1.6))
                         .child(code),
                 ),
         )

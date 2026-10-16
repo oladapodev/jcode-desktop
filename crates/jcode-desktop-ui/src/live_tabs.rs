@@ -2,10 +2,14 @@
 use super::*;
 use crate::panel::folder_session_title;
 
-/// Canvas air beneath the rounded tabs keeps them detached from the sheets.
-const TAB_FLOAT_GAP: f32 = 4.0;
+/// Header controls are 32px pills (prototype `h-8`), centred in the band.
+const TAB_HEIGHT: f32 = 32.0;
+/// Canvas air beneath the rounded tabs keeps them detached from the sheets,
+/// and equals the air above them, so every header control sits centred.
+const TAB_FLOAT_GAP: f32 = (FOLDER_CONTENT_INSET - TAB_HEIGHT) / 2.0;
+/// Top edge of the header's fixed-height controls.
+const TAB_TOP: f32 = FOLDER_CONTENT_INSET - TAB_FLOAT_GAP - TAB_HEIGHT;
 const TAB_GAP: f32 = 6.0;
-const TAB_HEIGHT: f32 = FOLDER_CONTENT_INSET - TAB_FLOAT_GAP;
 pub(super) const TAB_STATUS_WIDTH: f32 = 236.0;
 const TAB_MACHINE_WIDTH: f32 = 138.0;
 pub(super) const HEADER_WIDE_BREAKPOINT: f32 = 900.0;
@@ -480,7 +484,7 @@ impl Workspace {
             .debug_selector(|| "tab-next-workspace-slot".into())
             .absolute()
             .right(px(TAB_CLOSE_WIDTH + TAB_NEW_WIDTH))
-            .top_0()
+            .top(px(TAB_TOP))
             .w(px(TAB_NEXT_WORKSPACE_WIDTH))
             .h(px(TAB_HEIGHT))
             .flex()
@@ -668,11 +672,7 @@ impl Workspace {
         let theme = Theme::global();
         // Flat tabs: the selected one shares the sheet's fill, the rest sit on
         // the window backdrop with no fill or outline until hovered.
-        let backdrop = if self.layout_mode == crate::config::LayoutMode::FolderTabs {
-            theme.HEADER_BG
-        } else {
-            theme.BG
-        };
+        let backdrop = theme.BG;
         let paint_order = TabLayout::hover_paint_order(entries.len(), selected, hovered);
         for &position in &paint_order {
             let (index, row, _) = entries[position];
@@ -986,10 +986,12 @@ impl Workspace {
                             .left(px(version_width))
                             .top_0()
                             .w(px(status_width))
-                            .h(px(TAB_HEIGHT))
+                            // The whole band: the two-line title needs more
+                            // than a tab's height and must never clip.
+                            .h(px(FOLDER_CONTENT_INSET))
                             .flex()
                             .items_center()
-                            .pl_1()
+                            .pl(px(if wide_header { 16.0 } else { 4.0 }))
                             .overflow_hidden()
                             .when(!wide_header, |el| el.child(
                                 div().id("header-status")
@@ -1008,23 +1010,28 @@ impl Workspace {
                             .when(wide_header, |el| el.child(
                                 div()
                                     .debug_selector(|| "header-session-title".into())
+                                    .min_w_0()
                                     .flex()
                                     .flex_col()
-                                    .gap(px(1.0))
                                     .font_family(theme.FONT_UI)
-                                    .child(div().flex().items_center().gap(px(7.0))
-                                        .child(div().max_w(px(190.0)).truncate().text_size(px(13.0))
-                                            .font_weight(gpui::FontWeight::MEDIUM).text_color(theme.TEXT)
+                                    .child(div().h(px(19.0)).flex().items_center().gap(px(8.0))
+                                        .child(div().min_w_0().max_w(px(200.0)).truncate().text_size(px(14.0))
+                                            .line_height(px(19.0))
+                                            .font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme.TEXT)
                                             .child(active_title.clone()))
-                                        .child(div().flex_none().size(px(6.0)).rounded_full().bg(active_color)))
-                                    .child(div().flex().items_center().gap(px(5.0)).text_size(px(11.0))
-                                        .text_color(theme.TEXT_FAINT)
+                                        .child(div().flex_none().size(px(7.0)).rounded_full().bg(active_color)))
+                                    .child(div().h(px(17.0)).flex().items_center().gap(px(8.0))
+                                        .text_size(px(11.5)).line_height(px(17.0))
+                                        .text_color(theme.TEXT_FAINT).whitespace_nowrap()
                                         .child(project.clone())
-                                        .when_some(branch.clone(), |el, branch| el.child("/").child(branch))
-                                        .when(agents > 0, |el| el.child("/")
+                                        .when_some(branch.clone(), |el, branch| el
+                                            .child(div().text_color(theme.PANEL_BORDER_FOCUS).child("/"))
+                                            .child(branch))
+                                        .when(agents > 0, |el| el
+                                            .child(div().text_color(theme.PANEL_BORDER_FOCUS).child("/"))
                                             .child(div().flex().items_center().gap(px(2.0))
                                                 .children((0..agents.min(4)).map(|_| div()
-                                                    .size(px(5.0)).rounded_full().bg(theme.ACCENT))))
+                                                    .size(px(7.0)).rounded_full().bg(theme.ACCENT))))
                                             .child(format!("{agents} agents"))),
                             )))
                     )
@@ -1036,7 +1043,7 @@ impl Workspace {
                     .debug_selector(|| "header-status-slot".into())
                     .absolute()
                     .right(px(TAB_NEW_WIDTH + TAB_NEXT_WORKSPACE_WIDTH + TAB_CLOSE_WIDTH))
-                    .top_0()
+                    .top(px(TAB_TOP))
                     .w(px(machine_width))
                     .h(px(TAB_HEIGHT))
                     .flex().items_center().justify_center()
@@ -1071,7 +1078,7 @@ impl Workspace {
                     .debug_selector(|| "tab-new-session".into())
                     .absolute()
                     .right(px(TAB_CLOSE_WIDTH))
-                    .top_0()
+                    .top(px(TAB_TOP))
                     .size(px(TAB_HEIGHT))
                     .flex()
                     .items_center()
@@ -1113,7 +1120,7 @@ impl Workspace {
                         .debug_selector(|| "tab-close-window".into())
                         .absolute()
                         .right_0()
-                        .top_0()
+                        .top(px(TAB_TOP))
                         .size(px(TAB_HEIGHT))
                         .flex()
                         .items_center()

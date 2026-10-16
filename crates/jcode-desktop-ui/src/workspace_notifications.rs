@@ -317,7 +317,7 @@ impl Workspace {
             .debug_selector(|| "coach-toast".into())
             .absolute()
             .left(px(left))
-            .top(px(2.0 + slide))
+            .top(px((FOLDER_CONTENT_INSET - 28.0) / 2.0 + slide))
             .w(px(COACH_CHIP_WIDTH))
             .h(px(28.0))
             .rounded(px(12.0))

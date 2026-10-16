@@ -72,6 +72,10 @@ mod sidebar_worktrees;
 mod settings_rows;
 #[path = "workspace_stream_fixture.rs"]
 mod workspace_stream_fixture;
+#[path = "workspace_proto_fixture.rs"]
+mod workspace_proto_fixture;
+#[path = "workspace_agents_view.rs"]
+mod workspace_agents_view;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -230,9 +234,10 @@ const STRUT: f32 = 0.58;
 /// Folder surfaces sit flush against the window's bottom edge.
 const STRIP_PADDING_Y: f32 = 0.0;
 /// A tighter header keeps floating tabs close to the top without crowding the footer.
-const STRIP_PADDING_TOP: f32 = 6.0;
-/// Reserve a dedicated top row for the live-session folder tabs.
-const FOLDER_CONTENT_INSET: f32 = 32.0;
+const STRIP_PADDING_TOP: f32 = 0.0;
+/// Reserve a dedicated top row for the live-session folder tabs. 52px matches
+/// the prototype header, which also holds the two-line session title.
+const FOLDER_CONTENT_INSET: f32 = 52.0;
 /// The session sheet sits flush against the sidebar and the window's right edge.
 const FOLDER_CONNECTOR_WIDTH: f32 = 0.0;
 const FOLDER_RIGHT_MARGIN: f32 = 0.0;
@@ -758,6 +763,7 @@ pub struct Workspace {
     layout_mode: crate::config::LayoutMode,
     folder_frame: folder_surface::SharedFrame,
     sidebar_view: SidebarView,
+    agents_view: bool,
     worktrees: sidebar_worktrees::State,
     /// User-created collections of sessions (issue #7).
     collections: sidebar_collections::State,
@@ -1093,6 +1099,7 @@ impl Workspace {
             compact_sidebar_motion: responsive::VisibilityMotion::default(),
             last_canvas_width: None,
             sidebar_view: SidebarView::Sessions,
+            agents_view: false,
             worktrees: sidebar_worktrees::State::default(),
             collections: Default::default(),
             pending_collection_drafts: Vec::new(),
@@ -1264,19 +1271,37 @@ impl Workspace {
             workspace.init_worktree_fixture(cx);
             workspace.init_collections_fixture();
             if std::env::var_os("JCODE_DESKTOP_SCREENSHOT_SWARM").is_some() {
-                for (index, (label, status)) in [
-                    ("API reviewer", "working"),
-                    ("Sidebar implementation", "working"),
-                    ("Test runner", "completed"),
-                ]
-                .into_iter()
-                .enumerate()
-                {
+                let map_fixture = std::env::var_os("JCODE_DESKTOP_SCREENSHOT_AGENTS_VIEW").is_some();
+                let agents: &[(&str, &str)] = if map_fixture {
+                    workspace.sessions[0].title = Some("Realistic Korope render".into());
+                    workspace.sessions[0].status = "working".into();
+                    &[
+                        ("Geometry", "completed"), ("Textures", "working"),
+                        ("Lighting", "working"), ("Tests", "waiting"),
+                        ("Review", "idle"), ("Booking API", "failed"),
+                    ]
+                } else {
+                    &[("API reviewer", "working"), ("Sidebar implementation", "working"), ("Test runner", "completed")]
+                };
+                for (index, (label, status)) in agents.iter().copied().enumerate() {
                     let mut child = workspace.sessions[0].clone();
-                    child.session_id = format!("swarm-fixture-{index}");
+                    child.session_id = if map_fixture && matches!(index, 1 | 3) {
+                        format!("ssh://daytona/swarm-fixture-{index}")
+                    } else if map_fixture && matches!(index, 2 | 5) {
+                        format!("ssh://gcp-home/swarm-fixture-{index}")
+                    } else {
+                        format!("swarm-fixture-{index}")
+                    };
                     child.parent_session_id = Some("screenshot-fixture".into());
                     child.agent_label = Some(label.into());
                     child.swarm_status = Some(status.into());
+                    if map_fixture {
+                        child.title = Some(match status {
+                            "waiting" => "Tests needs your input",
+                            "failed" => "Booking API failed",
+                            _ => label,
+                        }.into());
+                    }
                     child.edit_stats = Some(jcode_sdk::SessionEditStats {
                         added: 14 + index as u64 * 50,
                         removed: 2 + index as u64 * 8,
@@ -1285,6 +1310,7 @@ impl Workspace {
                     workspace.sessions.push(child);
                 }
             }
+            workspace.init_prototype_fixture(cx);
             if std::env::var("JCODE_DESKTOP_SCREENSHOT_TRANSCRIPT").as_deref() == Ok("publish") {
                 workspace.open_publish_fixture(cx);
             }
@@ -1337,7 +1363,9 @@ impl Workspace {
             if std::env::var_os("JCODE_DESKTOP_SCREENSHOT_MINIMAP").is_some() {
                 workspace.show_minimap = true;
             }
-            if let Ok(view) = std::env::var("JCODE_DESKTOP_SCREENSHOT_VIEW") {
+            if let Ok(view) = std::env::var("JCODE_DESKTOP_SCREENSHOT_VIEW").or_else(|_| {
+                std::env::var("JCODE_DESKTOP_SCREENSHOT_AGENTS_VIEW").map(|_| "agents".into())
+            }) {
                 cx.spawn(async move |this, cx| {
                     cx.background_executor().timer(Duration::from_millis(3200)).await;
                     let _ = this.update(cx, |w, cx| {
@@ -1346,6 +1374,7 @@ impl Workspace {
                                 w.overview = true;
                                 w.overview_progress.set(1.0, Instant::now());
                             }
+                            "agents" => w.show_agents_view(cx),
                             "machines" => {
                                 w.remotes.hosts = vec![
                                     remotes::MANAGED_CLOUD_HOST.into(),
@@ -1519,6 +1548,7 @@ impl Workspace {
             compact_sidebar_motion: responsive::VisibilityMotion::default(),
             last_canvas_width: None,
             sidebar_view: SidebarView::Sessions,
+            agents_view: false,
             worktrees: sidebar_worktrees::State::default(),
             collections: Default::default(),
             pending_collection_drafts: Vec::new(),
@@ -2672,6 +2702,7 @@ impl Workspace {
             }
         }
         self.set_active(index, cx);
+        self.agents_view = false;
         self.overview = false;
         self.overview_progress.set(0.0, Instant::now());
         self.focus_active(window, cx);
@@ -6388,7 +6419,7 @@ impl Workspace {
                                     this.render_project_header(row.project, project, *count, collapsed_projects[row.project], project_branches[row.project].clone(), cx)
                                 };
                                 list = list
-                                    .when(sidebar_index > 0, |el| el.pt_3())
+                                    .when(sidebar_index > 0, |el| el.pt(px(2.0)))
                                     .child(header);
                             }
                             if row.checkout_header {
@@ -6509,12 +6540,14 @@ impl Workspace {
                                     .debug_selector(move || {
                                         format!("sidebar-session-{sidebar_index}").into()
                                     })
-                                    .ml_2()
-                                    .when(under_checkout, |el| el.ml(px(18.0)))
+                                    // Indented under the project chevron, as in the prototype.
+                                    .ml(px(21.0))
+                                    .when(under_checkout, |el| el.ml(px(28.0)))
                                     .mr_2()
-                                    .mb(px(2.0))
+                                    .mb(px(0.0))
                                     .relative()
-                                    .px_2()
+                                    .pl(px(6.0))
+                                    .pr_2()
                                     .py(px(3.0))
                                     .flex()
                                     .flex_col()
@@ -6529,14 +6562,14 @@ impl Workspace {
                                     } else {
                                         Theme::global().HEADER_BG
                                     }))
-                                    .when(!legacy_navigation && selected, |el| el.bg(Theme::global().HEADER_BG))
+                                    .when(!legacy_navigation && selected, |el| el.bg(Theme::global().USER_BG))
                                     .border_l_1()
                                     .border_t_1()
                                     .border_b_1()
                                     .border_color(gpui::rgba(0x00000000))
                                     .when(group_selected, |el| el.bg(Theme::global().ACCENT_DIM).border_color(Theme::global().ACCENT))
                                     .pr(px(crate::scrollbar::GUTTER + 8.0))
-                                    .when(!selected, |el| el.hover(move |el| el.bg(Theme::global().HEADER_BG)))
+                                    .when(!selected, |el| el.hover(move |el| el.bg(Theme::global().USER_BG)))
                                     .on_mouse_down(
                                         gpui::MouseButton::Left,
                                         cx.listener(move |this, event: &gpui::MouseDownEvent, window, _cx| {
@@ -6580,8 +6613,9 @@ impl Workspace {
                                                     .justify_center()
                                                     .debug_selector(move || format!("sidebar-session-dot-{sidebar_index}"))
                                                     .child(
-                                                        div().size(px(6.0)).rounded_full().bg(if working {
-                                                            Theme::global().OK
+                                                        div().size(px(7.0)).rounded_full().bg(if working {
+                                                            // Live work is brass, as in the header and tabs.
+                                                            Theme::global().ACCENT
                                                         } else if is_open {
                                                             Theme::global().TEXT_DIM
                                                         } else {
@@ -7221,7 +7255,9 @@ impl Workspace {
             .when(self.sidebar_view == SidebarView::Sessions, |el| {
                 el.child(self.render_sidebar_history_toggle(cx))
             })
-            .child(self.render_machine_switcher(cx))
+            // Footer: where new work runs, then the account, under one seam.
+            .child(div().flex_none().border_t_1().border_color(Theme::global().PANEL_BORDER)
+                .child(self.render_machine_switcher(cx)))
             .child(self.render_sidebar_account(cx))
             .into_any_element()
     }
@@ -9095,7 +9131,9 @@ impl Render for Workspace {
         }
 
         self.advance_hidden_strip_animations(now, overview_progress > 0.0);
-        let content = if overview_progress > 0.0 {
+        let content = if self.agents_view {
+            self.render_agents_view(cx)
+        } else if overview_progress > 0.0 {
             div()
                 .size_full()
                 .bg(Theme::global().BG)
@@ -9188,11 +9226,9 @@ impl Render for Workspace {
             .flex()
             .flex_col()
             .relative()
-            .bg(if folders {
-                Theme::global().HEADER_BG
-            } else {
-                Theme::global().BG
-            })
+            // The window backdrop is the darkest ink in both layouts, so the
+            // header and pane gaps recede behind the panes (prototype `ink`).
+            .bg(Theme::global().BG)
             .when(folders, |el| {
                 el.child(folder_surface::background(self.folder_frame.clone()))
             })
@@ -9209,7 +9245,11 @@ impl Render for Workspace {
             .capture_key_down(cx.listener(Self::copilot_key_down))
             .capture_key_up(cx.listener(Self::copilot_key_up))
             .capture_action(cx.listener(|this, _: &crate::input::Clear, window, cx| {
-                if this.compact_sidebar_open {
+                if this.agents_view {
+                    this.close_agents_view(cx);
+                    this.focus_active(window, cx);
+                    cx.stop_propagation();
+                } else if this.compact_sidebar_open {
                     this.compact_sidebar_open = false;
                     this.focus_active(window, cx);
                     cx.stop_propagation();
@@ -9217,6 +9257,12 @@ impl Render for Workspace {
                 }
             }))
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                if this.agents_view && event.keystroke.key == "escape" {
+                    this.close_agents_view(cx);
+                    this.focus_active(window, cx);
+                    cx.stop_propagation();
+                    return;
+                }
                 if this.rename_editor.is_some() && event.keystroke.key == "escape" {
                     this.close_rename_editor(cx);
                     cx.stop_propagation();
@@ -9324,15 +9370,15 @@ impl Render for Workspace {
                                         ))
                                     })
                                     .child(content)
-                                    .child(self.render_workspace_bar(
+                                    .when(!self.agents_view, |el| el.child(self.render_workspace_bar(
                                         canvas_w,
                                         compact || !self.show_sidebar,
                                         coach_progress,
                                         window,
                                         cx,
-                                    ))
+                                    )))
                                     .when(
-                                        self.show_minimap
+                                        !self.agents_view && self.show_minimap
                                             && live_tabs::minimap_fits_header(canvas_w)
                                             && !self.slots.is_empty()
                                             && overview_progress <= 0.0,
@@ -14258,7 +14304,7 @@ mod tests {
 
         assert!(vcx.debug_bounds("edge-new-session").is_none());
         let plus = vcx.debug_bounds("tab-new-session").unwrap();
-        assert_eq!(plus.size, gpui::size(px(28.0), px(28.0)));
+        assert_eq!(plus.size, gpui::size(px(32.0), px(32.0)));
         vcx.simulate_click(plus.center(), gpui::Modifiers::default());
         vcx.run_until_parked();
 

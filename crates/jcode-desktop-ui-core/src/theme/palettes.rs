@@ -570,12 +570,14 @@ pub(super) fn studio_dark() -> Theme {
     theme
 }
 
-/// Studio light: the same structure on warm paper.
+/// Studio light: the same structure on warm paper. Surfaces follow the
+/// prototype's paper tokens: ink backdrop, soot panes and sidebar, slab-2
+/// cards. Raised chrome sits a step lighter than the panes, as in dark.
 pub(super) fn studio_light() -> Theme {
     let mut theme = Palette {
         bg: 0xf6f3ee,
-        panel: 0xfffdf9,
-        raised: 0xefebe4,
+        panel: 0xefebe4,
+        raised: 0xfaf7f1,
         border: 0xe3ddd2,
         text: 0x221d17,
         muted: 0x6b6156,
@@ -585,23 +587,25 @@ pub(super) fn studio_light() -> Theme {
         string: 0x4f7a2a,
         number: 0x8a3f8a,
         error: 0xb34536,
-        ok: 0x457a3c,
-        warn: 0xa35a17,
+        // Panes sit on soot paper now, so status inks run a shade deeper
+        // to keep 4.5:1 there.
+        ok: 0x3f7237,
+        warn: 0x985313,
     }
     .theme();
     let alpha = |color: u32, opacity: u32| rgba_c((color << 8) | opacity);
     theme.PANEL_BORDER = rgb_c(0xe8e2d8);
     theme.PANEL_BORDER_FOCUS = rgb_c(0xd2cabd);
-    theme.ACCENT = rgb_c(0x9a5f1a);
-    theme.ACCENT_DIM = alpha(0x9a5f1a, 0x1a);
+    theme.ACCENT = rgb_c(0x8f5816);
+    theme.ACCENT_DIM = alpha(0x8f5816, 0x1a);
     theme.ACCENT_MUTED = rgb_c(0x6b6156);
     theme.USER_ACCENT = rgb_c(0x6b6156);
     theme.AI_ACCENT = rgb_c(0x6b6156);
-    theme.USER_BG = rgb_c(0xefebe4);
+    theme.USER_BG = rgb_c(0xf4f0e9);
     theme.PROMPT_TINT_STRENGTH = 0.0;
-    theme.TEXT_FAINT = rgb_c(0x7d7366);
+    theme.TEXT_FAINT = rgb_c(0x71675b);
     theme.HEADING = rgb_c(0x16120d);
-    theme.INPUT_BG = rgb_c(0xefebe4);
+    theme.INPUT_BG = rgb_c(0xf4f0e9);
     theme.INPUT_BORDER = rgb_c(0xe3ddd2);
     theme.TOOL_BG = rgb_c(0xfffdf9);
     theme.TOOL_BORDER = rgb_c(0xe8e2d8);
@@ -611,8 +615,8 @@ pub(super) fn studio_light() -> Theme {
     theme.INLINE_CODE_BG = rgb_c(0xebe5dc);
     theme.ERROR_BG = alpha(0xb34536, 0x10);
     theme.LINK = rgb_c(0x7a4e0f);
-    theme.SELECTION = alpha(0x9a5f1a, 0x33);
-    theme.CURSOR = rgb_c(0x9a5f1a);
+    theme.SELECTION = alpha(0x8f5816, 0x33);
+    theme.CURSOR = rgb_c(0x8f5816);
     theme
 }
 

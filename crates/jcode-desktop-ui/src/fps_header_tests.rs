@@ -63,8 +63,9 @@ fn fps_and_new_session_share_the_tab_row_without_a_top_header(cx: &mut gpui::Tes
                         plus.left() >= tabs.right() && plus.right() <= row.right(),
                         "width={width}, sidebar={sidebar}, minimap={minimap}, plus={plus:?}, tabs={tabs:?}, row={row:?}"
                     );
-                    assert_eq!(plus.top(), tabs.top());
-                    assert_eq!(plus.size.height, px(28.0));
+                    // Header controls are 32px pills centred in the 52px band.
+                    assert!((plus.center().y - tabs.center().y).abs() < px(1.0));
+                    assert_eq!(plus.size.height, px(32.0));
                     assert!(
                         (tabs.left()
                             - row.left()

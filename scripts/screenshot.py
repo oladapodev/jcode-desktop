@@ -79,7 +79,10 @@ def main():
     parser.add_argument("--hide-sidebar", action="store_true", help="start with the sidebar hidden (Ctrl+B), showing the icon rail on wide windows")
     parser.add_argument("--collections", nargs="?", const="1", choices=("1", "menu", "form"),
                         help="show user-created collections above project groups (menu: a row's Move menu open, form: the editor)")
+    parser.add_argument("--demo-data", choices=("prototype",), default=os.environ.get("JCODE_DESKTOP_SCREENSHOT_DEMO_DATA") or None,
+                        help="seed offline data that mirrors the web prototype (projects, sessions, transcript, plan, model, account)")
     parser.add_argument("--swarm", action="store_true", help="load nested swarm fixtures (children remain hidden in the sidebar)")
+    parser.add_argument("--agents-view", action="store_true", help="open the native Agents swarm map with the --swarm fixture")
     parser.add_argument("--view", choices=("overview", "machines"),
                         help="open the overview or Machines panel shortly after launch")
     parser.add_argument("--minimap", action="store_true", help="show the workspace minimap")
@@ -166,6 +169,8 @@ def main():
     parser.add_argument("--selection-drag", nargs=4, type=int, metavar=("X1", "Y1", "X2", "Y2"),
                         help="drag a native text selection on the private display before capture")
     args = parser.parse_args()
+    if args.agents_view:
+        args.swarm = True
     if args.onboarding_interact:
         others = any(value for key, value in vars(args).items()
                      if key.endswith("_interact") and key != "onboarding_interact")
@@ -481,6 +486,10 @@ def main():
             env["JCODE_DESKTOP_SCREENSHOT_COLLECTIONS"] = args.collections
         if args.swarm:
             env["JCODE_DESKTOP_SCREENSHOT_SWARM"] = "1"
+        if args.agents_view:
+            env["JCODE_DESKTOP_SCREENSHOT_AGENTS_VIEW"] = "1"
+        if args.demo_data:
+            env["JCODE_DESKTOP_SCREENSHOT_DEMO_DATA"] = args.demo_data
         if args.view:
             env["JCODE_DESKTOP_SCREENSHOT_VIEW"] = args.view
         if args.minimap:
@@ -606,7 +615,7 @@ def main():
                     subprocess.run(["xdotool", "key", "--clearmodifiers", "Escape"],
                                    env=env, cwd=root, check=True, timeout=10)
                     time.sleep(0.3)
-                if args.view:
+                if args.view or args.agents_view:
                     # The app opens the view 3.2s after launch, after this Escape.
                     time.sleep(2.0)
                 if args.selection_drag:

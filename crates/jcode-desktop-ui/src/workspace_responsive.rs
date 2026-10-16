@@ -388,7 +388,7 @@ impl Workspace {
             .group("compact-sidebar-toggle")
             .absolute()
             .left(px(left + 4.0))
-            .top_0()
+            .top(px((FOLDER_CONTENT_INSET - 28.0) / 2.0))
             .size(px(28.0))
             .flex()
             .items_center()

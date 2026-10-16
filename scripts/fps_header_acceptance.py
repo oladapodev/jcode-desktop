@@ -13,14 +13,15 @@ def header_pixels(image, height, minimap, version_width):
     canvas_left = 252 + 12
     right = image.width - 12 - (154 if minimap else 0)
     fps_left = round(canvas_left + version_width)
-    slot = image.crop((fps_left - 12, 6, fps_left + 104, 34))
+    # The header band is 52px tall; its controls are centred in it.
+    slot = image.crop((fps_left - 12, 0, fps_left + 104, 52))
     background = slot.getpixel((0, 0))
     changed = [(x, y) for y in range(slot.height) for x in range(slot.width)
                if slot.getpixel((x, y)) != background]
     assert changed, "status text is missing"
     assert all(0 < x < slot.width - 1 and 0 < y < slot.height - 1 for x, y in changed), "status content is clipped"
     # The new-session plus is always visible to the right of the tabs, before the minimap.
-    plus = image.crop((right - 40 - 28, 6, right - 40, 34))
+    plus = image.crop((right - 40 - 32, 10, right - 40, 42))
     assert any(pixel != plus.getpixel((0, 0)) for pixel in plus.getdata()), "tab plus is missing"
     return {"header_height": height, "text_pixels": len(changed), "background": background}
 
