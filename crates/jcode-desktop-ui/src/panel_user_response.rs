@@ -20,15 +20,141 @@ fn height_cap(viewport: Pixels) -> Pixels {
     px(f32::from(viewport).max(1.))
 }
 
+/// Called with the chosen option text (or `None` for "Something else").
+pub(super) type AnswerHandler = std::rc::Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
+
+/// A question with a trailing bullet list of short options is an ask card.
+pub(super) fn ask(response: &Response) -> Option<(String, Vec<String>)> {
+    let lines: Vec<&str> = response.content.lines().collect();
+    let first_bullet = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with("- ") || l.trim_start().starts_with("* "))?;
+    let question = lines[..first_bullet].join("\n").trim().to_owned();
+    let options: Vec<String> = lines[first_bullet..]
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            l.trim_start()
+                .strip_prefix("- ")
+                .or_else(|| l.trim_start().strip_prefix("* "))
+                .map(|o| o.trim().to_owned())
+        })
+        .collect::<Option<_>>()?;
+    let titled = response
+        .title
+        .as_deref()
+        .is_some_and(|t| t.to_lowercase().contains("answer"));
+    let plausible = question.ends_with('?')
+        && (2..=6).contains(&options.len())
+        && options.iter().all(|o| !o.is_empty() && o.chars().count() <= 60);
+    ((titled || plausible) && !question.is_empty() && !options.is_empty()).then(|| {
+        let options = options
+            .into_iter()
+            .filter(|o| !o.eq_ignore_ascii_case("something else"))
+            .collect();
+        (question, options)
+    })
+}
+
+fn render_ask(
+    question: &str,
+    options: &[String],
+    index: usize,
+    on_answer: AnswerHandler,
+) -> AnyElement {
+    let theme = Theme::global();
+    let mut row = div().flex().flex_wrap().gap_2();
+    for (i, option) in options.iter().enumerate() {
+        let handler = on_answer.clone();
+        let text = option.clone();
+        row = row.child(
+            div()
+                .id(("ask-option", index * 16 + i))
+                .debug_selector(move || format!("ask-option-{i}").into())
+                .px_3p5()
+                .py_1p5()
+                .rounded_full()
+                .border_1()
+                .border_color(theme.TEXT_FAINT.opacity(0.4))
+                .text_size(px(13.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(theme.TEXT)
+                .cursor_pointer()
+                .hover(|el| el.bg(theme.USER_BG))
+                .child(option.clone())
+                .on_click(move |_, window, cx| {
+                    handler(Some(text.clone()), window, cx);
+                    cx.stop_propagation();
+                }),
+        );
+    }
+    let handler = on_answer;
+    row = row.child(
+        div()
+            .id(("ask-other", index))
+            .debug_selector(|| "ask-something-else".into())
+            .px_3p5()
+            .py_1p5()
+            .rounded_full()
+            .text_size(px(13.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(theme.TEXT_DIM)
+            .cursor_pointer()
+            .hover(|el| el.bg(theme.USER_BG).text_color(theme.TEXT))
+            .child("Something else")
+            .on_click(move |_, window, cx| {
+                handler(None, window, cx);
+                cx.stop_propagation();
+            }),
+    );
+    div()
+        .id(("user-response", index))
+        .debug_selector(|| "user-response-card".into())
+        .w_full()
+        .min_w_0()
+        .flex_shrink_0()
+        .rounded(px(16.))
+        .bg(theme.WARN.opacity(0.08))
+        .p_4()
+        .font_family(theme.FONT_UI)
+        .child(
+            div()
+                .mb_1p5()
+                .flex()
+                .items_center()
+                .gap_2()
+                .text_size(px(13.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(theme.WARN)
+                .child("?")
+                .child("Needs your answer"),
+        )
+        .child(
+            div()
+                .w_full()
+                .mb(px(14.))
+                .text_size(px(14.5))
+                .line_height(px(23.))
+                .text_color(theme.TEXT)
+                .child(question.to_owned()),
+        )
+        .child(row)
+        .into_any_element()
+}
+
 pub(super) fn render(
     response: &Response,
     index: usize,
     viewport_height: Pixels,
     selection: &Entity<TextSelection>,
     on_preview: markdown::MediaPreviewHandler,
+    on_answer: AnswerHandler,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
+    if let Some((question, options)) = ask(response) {
+        return render_ask(&question, &options, index, on_answer);
+    }
     div()
         .id(("user-response", index))
         .debug_selector(|| "user-response-card".into())

@@ -48,9 +48,12 @@ impl Panel {
             self.composer_width,
             &model_label,
             effort.as_deref().map(effort_label).as_deref(),
-            &account_label,
+            self.model.is_none().then_some(account_label.as_str()),
         );
         let (show_mode_label, show_effort_label, show_account_label, show_context) = labels;
+        // Once a model is chosen the account is detail: it lives in the model
+        // chip's tooltip and an icon-only account chip, as in the prototype.
+        let model_tooltip = format!("{model_label} · {account_label}");
         let account_tooltip = account_label.clone();
         let remote_machine = (!screenshot_mode)
             .then(|| crate::harness::remote_host(&self.session_id))
@@ -197,6 +200,7 @@ impl Panel {
                                     .child(model_label),
                             )
                             .child(chip_chevron())
+                            .when(self.model.is_some(), |el| el.tooltip(move |_, cx| cx.new(|_| super::usage::MeterTooltip(model_tooltip.clone())).into()))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.toggle_model_picker(window, cx);
                                 cx.stop_propagation();
@@ -218,7 +222,7 @@ impl Panel {
                             .flex_shrink(2.)
                             .min_w(px(24.))
                             .when(!compact, |el| el.child(chip_icon(ACCOUNT_ICON, 14.)))
-                            .when(compact || show_account_label, |el| el.child(div().min_w_0().truncate().child(if compact { "•••".to_string() } else { account_label })))
+                            .when(compact || show_account_label, |el| el.child(div().min_w_0().truncate().child(if compact { "•••".to_string() } else { account_label.clone() })))
                             .when(!compact && show_account_label, |el| el.child(chip_chevron()))
                             .when(!show_account_label, |el| el.tooltip(move |_, cx| cx.new(|_| super::usage::MeterTooltip(account_tooltip.clone().into())).into()))
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -529,15 +533,16 @@ impl Panel {
 
 /// Which optional chip parts fit a composer card `width` wide: mode label,
 /// effort label, account label, context ring. Secondary labels drop first so
-/// the model name never clips. `0` (not yet measured) shows everything.
+/// the model name never clips. `0` (not yet measured) shows everything. A
+/// `None` account is already icon-only.
 fn chip_labels(
     width: f32,
     model: &str,
     effort: Option<&str>,
-    account: &str,
+    account: Option<&str>,
 ) -> (bool, bool, bool, bool) {
     if width <= 0. {
-        return (true, true, true, true);
+        return (true, true, account.is_some(), true);
     }
     // Inter 13px medium averages about 7.2px per character.
     let text = |label: &str| label.chars().count() as f32 * 7.2;
@@ -546,24 +551,30 @@ fn chip_labels(
     // Attach, voice, send, row padding and gaps.
     let fixed = 130.;
     let model = picker(model);
-    let (mut mode, mut effort_label, mut account_label, mut context) = (true, true, true, true);
+    let (mut mode, mut effort_label, mut account_label, mut context) =
+        (true, true, account.is_some(), true);
     let used = |mode: bool, effort_label: bool, account_label: bool, context: bool| {
         fixed
             + model
             + if mode { 76. } else { 34. }
             + effort.map_or(0., |label| if effort_label { 43. + text(label) } else { 37. })
-            + if account_label { picker(account) } else { 34. }
+            + match account.filter(|_| account_label) {
+                Some(account) => picker(account),
+                None => 34.,
+            }
             + if context { 64. } else { 0. }
     };
+    // Lowest priority first: the account label collapses to its icon before
+    // anything else, then effort and mode labels, then the context ring.
     for step in 0..4 {
         if used(mode, effort_label, account_label, context) <= width {
             break;
         }
         match step {
-            0 => effort_label = false,
-            1 => context = false,
+            0 => account_label = false,
+            1 => effort_label = false,
             2 => mode = false,
-            _ => account_label = false,
+            _ => context = false,
         }
     }
     (mode, effort_label, account_label, context)

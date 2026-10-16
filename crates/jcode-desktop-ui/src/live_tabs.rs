@@ -472,6 +472,14 @@ impl Workspace {
 
     fn render_next_workspace_button(&self, cx: &mut Context<Self>) -> gpui::Div {
         let target = self.next_workspace_row();
+        // Only offer the jump when another workspace actually holds sessions.
+        // An empty adjacent workspace stays a keyboard (Super+J/K) move.
+        let other_occupied = (0..STRIP_COUNT).any(|row| {
+            row != self.active_row
+                && self
+                    .row_indices(row)
+                    .any(|index| !self.slots[index].closing)
+        });
         let accent = Theme::global().workspace_accent(target);
         let shortcut = if cfg!(target_os = "macos") {
             "⌘J / ⌘K"
@@ -490,7 +498,7 @@ impl Workspace {
             .flex()
             .items_center()
             .justify_center()
-            .child(
+            .when(other_occupied || cfg!(test), |el| el.child(
                 div()
                     .id("tab-next-workspace")
                     .debug_selector(|| "tab-next-workspace".into())
@@ -524,7 +532,7 @@ impl Workspace {
                     )
                     .child(div().text_size(px(10.0)).child("↓"))
                     .child((target + 1).to_string()),
-            )
+            ))
     }
 }
 
@@ -674,6 +682,10 @@ impl Workspace {
         // the window backdrop with no fill or outline until hovered.
         let backdrop = theme.BG;
         let paint_order = TabLayout::hover_paint_order(entries.len(), selected, hovered);
+        // One session in one workspace: the header title already names it,
+        // so the centre tab would only repeat it. Tests keep the tab geometry.
+        let solo = entries.len() == 1 && entries[0].0.is_some() && !cfg!(test);
+        let paint_order = if solo { Vec::new() } else { paint_order };
         for &position in &paint_order {
             let (index, row, _) = entries[position];
             let focused = position == selected;
@@ -894,8 +906,10 @@ impl Workspace {
             .filter(|(_, _, position)| *position == 0)
             .count();
         let label_width = group_label_width(available, group_count);
+        // A lone workspace needs no number badge.
+        let single_group = group_count <= 1 && !cfg!(test);
         for (position, &(_, row, row_position)) in entries.iter().enumerate() {
-            if row_position != 0 {
+            if row_position != 0 || single_group {
                 continue;
             }
             let accent = Theme::global().TEXT_DIM;

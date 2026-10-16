@@ -3958,6 +3958,15 @@ impl Panel {
                         response_viewport_height,
                         &self.transcript_selection,
                         self.media_preview_handler(cx),
+                        {
+                            let panel = cx.entity();
+                            std::rc::Rc::new(move |answer: Option<String>, window: &mut Window, cx: &mut App| {
+                                panel.update(cx, |panel, cx| match answer {
+                                    Some(text) => panel.submit_or_queue(text, Vec::new(), false, cx),
+                                    None => panel.focus_input(window, cx),
+                                });
+                            })
+                        },
                         window,
                         cx,
                     );
@@ -5482,37 +5491,42 @@ impl Render for Panel {
                     .child(div().flex_1().min_w_0().h_full().child(chat))
                     .child(
                         div()
-                            .id("pinned-todo-scroll")
-                            .debug_selector(|| "pinned-todo-card".into())
                             .flex_none()
                             .w(px(365.))
                             .h_full()
+                            .p(px(8.))
+                            .pl_0()
+                            .child(
+                    div()
+                            .id("pinned-todo-scroll")
+                            .debug_selector(|| "pinned-todo-card".into())
+                            .size_full()
                             .overflow_y_scroll()
-                            .border_l_1()
-                            .border_color(theme.PANEL_BORDER)
-                            .bg(if light_pane { theme.HEADER_BG } else { theme.PANEL_BG })
+                            .rounded(px(16.))
+                            .bg(theme.HEADER_BG)
                             .child(
                                 div()
-                                    .h(px(48.))
+                                    .h(px(44.))
                                     .px_2()
                                     .flex()
                                     .items_center()
-                                    .gap_2()
-                                    .border_b_1()
-                                    .border_color(theme.PANEL_BORDER)
-                                    .text_size(px(12.))
+                                    .gap_1()
+                                    .text_size(px(12.5))
                                     .font_family(theme.FONT_UI)
                                     .child(
                                         div()
+                                            .debug_selector(|| "plan-tab-active".into())
                                             .px_3()
                                             .py_1()
-                                            .rounded(px(9.))
-                                            .bg(if light_pane { theme.PANEL_BG } else { theme.USER_BG })
+                                            .rounded_full()
+                                            .border_1()
+                                            .border_color(theme.TEXT_FAINT.opacity(0.4))
                                             .font_weight(FontWeight::MEDIUM)
                                             .text_color(theme.TEXT)
-                                            .child("☷  Plan"),
+                                            .child("Plan"),
                                     )
-                                    .child(div().px_2().text_color(theme.TEXT_DIM).child("Changes")),
+                                    .child(div().px_2p5().py_1().text_color(theme.TEXT_DIM).child("Changes"))
+                                    .child(div().flex_1()),
                             )
                             .child(div().h(px(10.)))
                             .child(render_todo_card_with_style(
@@ -5549,6 +5563,7 @@ impl Render for Panel {
                                         .child(div().min_w_0().truncate().font_family(theme.FONT_MONO).child(label))
                                 }))
                             }),
+                            ),
                     )
                     .into_any_element();
             }

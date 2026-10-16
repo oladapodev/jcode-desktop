@@ -377,6 +377,10 @@ impl Panel {
             return None;
         }
         let failed = error.is_some();
+        if done && !failed && !self.is_busy() && files.len() >= 3
+        {
+            return Some(self.render_change_summary(name, input, output, &files, cx));
+        }
         let intent = edit_preview_intent(input);
         let mut card = div()
             .debug_selector(|| "code-edit-preview".into())
@@ -422,6 +426,158 @@ impl Panel {
             );
         }
         Some(card.into_any_element())
+    }
+
+    /// The prototype's compact "N files changed" card for a finished edit.
+    /// The full diff opens in the review pane from Review or any file row.
+    fn render_change_summary(
+        &self,
+        name: &str,
+        input: &str,
+        output: &str,
+        files: &Arc<Vec<FileDiff>>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = Theme::global();
+        let source = cx.entity_id();
+        let request = |selected: usize| crate::ui_actions::OpenChangeReview {
+            source,
+            name: name.to_owned(),
+            input: input.to_owned(),
+            output: output.to_owned(),
+            selected,
+            done: true,
+            failed: false,
+        };
+        let added: usize = files.iter().map(FileDiff::added).sum();
+        let removed: usize = files.iter().map(FileDiff::removed).sum();
+        let focus = self.focus_handle.clone();
+        let review = request(0);
+        let review_focus = focus.clone();
+        let title = if files.len() == 1 {
+            "1 file changed".to_owned()
+        } else {
+            format!("{} files changed", files.len())
+        };
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_2p5()
+            .py_1p5()
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.TEXT)
+                    .child(title),
+            )
+            .child(
+                div()
+                    .font_family(theme.FONT_MONO)
+                    .text_size(px(12.))
+                    .text_color(theme.OK)
+                    .child(format!("+{added}")),
+            )
+            .child(
+                div()
+                    .font_family(theme.FONT_MONO)
+                    .text_size(px(12.))
+                    .text_color(theme.ERROR)
+                    .child(format!("−{removed}")),
+            )
+            .child(
+                div().ml_auto().flex().gap_1().child(
+                    div()
+                        .id("change-summary-review")
+                        .debug_selector(|| "change-summary-review".into())
+                        .px_3()
+                        .py_1()
+                        .rounded_full()
+                        .text_size(px(12.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.TEXT_DIM)
+                        .cursor_pointer()
+                        .hover(|el| el.bg(theme.USER_BG).text_color(theme.TEXT))
+                        .child("Review")
+                        .on_click(move |_, window, cx| {
+                            review_focus.focus(window, cx);
+                            window.dispatch_action(Box::new(review.clone()), cx);
+                            cx.stop_propagation();
+                        }),
+                ),
+            );
+        let mut card = div()
+            .id("change-summary")
+            .debug_selector(|| "change-summary".into())
+            .my_2()
+            .flex_none()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .rounded(px(16.))
+            .bg(theme.HEADER_BG)
+            .p_1p5()
+            .font_family(theme.FONT_UI)
+            .child(header);
+        for (index, file) in files.iter().enumerate() {
+            let (dir, leaf) = match file.path.rsplit_once('/') {
+                Some((dir, leaf)) => (format!("{dir}/"), leaf.to_owned()),
+                None => (String::new(), file.path.clone()),
+            };
+            let open = request(index);
+            let focus = focus.clone();
+            card = card.child(
+                div()
+                    .id(("change-summary-row", index))
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .px_2p5()
+                    .py_1p5()
+                    .rounded(px(10.))
+                    .cursor_pointer()
+                    .hover(|el| el.bg(theme.USER_BG))
+                    .on_click(move |_, window, cx| {
+                        focus.focus(window, cx);
+                        window.dispatch_action(Box::new(open.clone()), cx);
+                        cx.stop_propagation();
+                    })
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .flex()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .font_family(theme.FONT_MONO)
+                            .text_size(px(12.5))
+                            .text_color(theme.TEXT_DIM)
+                            .child(div().flex_none().text_color(theme.TEXT_FAINT).child(dir))
+                            .child(div().flex_none().child(leaf)),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .flex()
+                            .gap_1p5()
+                            .font_family(theme.FONT_MONO)
+                            .text_size(px(11.5))
+                            .child(
+                                div()
+                                    .text_color(theme.OK)
+                                    .child(format!("+{}", file.added())),
+                            )
+                            .child(
+                                div()
+                                    .text_color(theme.ERROR)
+                                    .child(format!("−{}", file.removed())),
+                            ),
+                    ),
+            );
+        }
+        card.into_any_element()
     }
 
     pub(crate) fn is_change_review(&self) -> bool {

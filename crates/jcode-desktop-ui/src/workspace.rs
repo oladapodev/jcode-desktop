@@ -6394,7 +6394,11 @@ impl Workspace {
             );
         }
         if !ordered_sessions.is_empty() {
-            let dock = self.render_project_dock(&groups, &ordered_sessions, cx);
+            // Each project appears once: the redesigned list has no second
+            // shortcut strip. Legacy navigation keeps its jump dock.
+            let dock = legacy_navigation
+                .then(|| self.render_project_dock(&groups, &ordered_sessions, cx))
+                .flatten();
             let swarm_members = std::rc::Rc::new(swarm_members);
             list = list.child(div().relative().w_full().flex_1().min_h_0().child(
                 gpui::list(
@@ -6469,7 +6473,8 @@ impl Workspace {
                                 .flatten()
                                 .or_else(|| this.sidebar_todo_progress.get(&session.session_id).copied());
                             let meta = sidebar_session_meta(session);
-                            let right_meta = meta.clone();
+                            // Faint relative time at the row's right, as in the prototype.
+                            let right_meta = sidebar_session_age(session);
                             let edits = session.edit_stats.as_ref().filter(|stats| sidebar_edits::has_changes(stats)).map(|stats| {
                                 sidebar_edits::render(&session.session_id, stats.added, stats.removed, stats.approximate)
                             });
@@ -6496,8 +6501,8 @@ impl Workspace {
                                 .get(&session.session_id)
                                 .cloned()
                                 .unwrap_or_default();
-                            let agent_state = sidebar_swarm::summary_state(&agent_members);
                             let under_checkout = checkout_rows[row.project];
+                            let session_state = sidebar_dot_state(&session.status);
                             let close_id = session.session_id.clone();
                             let pin_id = session.session_id.clone();
                             let pinned = session.saved;
@@ -6541,12 +6546,12 @@ impl Workspace {
                                         format!("sidebar-session-{sidebar_index}").into()
                                     })
                                     // Indented under the project chevron, as in the prototype.
-                                    .ml(px(21.0))
+                                    .ml(px(if legacy_navigation { 21.0 } else { 17.0 }))
                                     .when(under_checkout, |el| el.ml(px(28.0)))
                                     .mr_2()
                                     .mb(px(0.0))
                                     .relative()
-                                    .pl(px(6.0))
+                                    .pl(px(if legacy_navigation { 6.0 } else { 9.0 }))
                                     .pr_2()
                                     .py(px(3.0))
                                     .flex()
@@ -6563,6 +6568,18 @@ impl Workspace {
                                         Theme::global().HEADER_BG
                                     }))
                                     .when(!legacy_navigation && selected, |el| el.bg(Theme::global().USER_BG))
+                                    // The project's thread guide, brass on the selected row (prototype).
+                                    .when(!legacy_navigation, |el| el.child(
+                                        div()
+                                            .debug_selector(move || format!("sidebar-session-guide-{sidebar_index}"))
+                                            .absolute()
+                                            .left(px(-1.0))
+                                            .top(px(5.0))
+                                            .bottom(px(5.0))
+                                            .w(px(if selected { 2.0 } else { 1.0 }))
+                                            .rounded_full()
+                                            .bg(if selected { Theme::global().ACCENT } else { Theme::global().PANEL_BORDER }),
+                                    ))
                                     .border_l_1()
                                     .border_t_1()
                                     .border_b_1()
@@ -6613,9 +6630,13 @@ impl Workspace {
                                                     .justify_center()
                                                     .debug_selector(move || format!("sidebar-session-dot-{sidebar_index}"))
                                                     .child(
-                                                        div().size(px(7.0)).rounded_full().bg(if working {
+                                                        div().size(px(7.0)).rounded_full().bg(if working || session_state == SidebarDotState::Working {
                                                             // Live work is brass, as in the header and tabs.
                                                             Theme::global().ACCENT
+                                                        } else if session_state == SidebarDotState::Waiting {
+                                                            Theme::global().WARN
+                                                        } else if session_state == SidebarDotState::Failed {
+                                                            Theme::global().ERROR
                                                         } else if is_open {
                                                             Theme::global().TEXT_DIM
                                                         } else {
@@ -6636,7 +6657,8 @@ impl Workspace {
                                                         .into()
                                                     })
                                                     .text_size(px(13.0))
-                                                    .when(selected, |el| el.font_weight(gpui::FontWeight::MEDIUM))
+                                                    .when(!legacy_navigation && !selected, |el| el.text_color(Theme::global().TEXT_DIM))
+                                                    .when(selected && legacy_navigation, |el| el.font_weight(gpui::FontWeight::MEDIUM))
                                                     .line_height(relative(1.5));
                                                 // A working session's title breathes in step
                                                 // with running tool rows. The pulse is its own
@@ -6656,12 +6678,12 @@ impl Workspace {
                                                     .px(px(6.0))
                                                     .flex()
                                                     .items_center()
-                                                    .gap(px(5.0))
+                                                    .gap(px(3.0))
                                                     .rounded(px(9.0))
                                                     .hover(|el| el.bg(Theme::global().TOOL_BG))
                                                     .font_family(Theme::global().FONT_UI)
                                                     .text_size(px(11.0))
-                                                    .text_color(if agent_working > 0 { Theme::global().TEXT_DIM } else { Theme::global().TEXT_FAINT })
+                                                    .text_color(if agent_working > 0 && legacy_navigation { Theme::global().TEXT_DIM } else { Theme::global().TEXT_FAINT })
                                                     .tooltip(move |_, cx| {
                                                         if agent_members.is_empty() {
                                                             cx.new(|_| remotes::HeaderTooltip(format!(
@@ -6672,7 +6694,10 @@ impl Workspace {
                                                             cx.new(|_| sidebar_swarm::SwarmTooltip(agent_members.clone())).into()
                                                         }
                                                     })
-                                                    .child(sidebar_swarm::dot(agent_state, 6.0))
+                                                    .child(gpui::svg()
+                                                        .data(include_bytes!("../../../assets/icons/swarm.svg").as_slice())
+                                                        .size(px(11.0))
+                                                        .text_color(Theme::global().TEXT_FAINT))
                                                     .child(agent_total.to_string()),
                                             ))
                                             .when(!legacy_navigation && agent_total == 0, |row| row.children(
@@ -7813,9 +7838,10 @@ impl Workspace {
         let theme = Theme::global();
         let featured = |preset: ThemePreset| matches!(preset,
             ThemePreset::StudioDark | ThemePreset::Midnight | ThemePreset::PureBlack | ThemePreset::StudioLight);
-        // Keep catalogue indices stable for the theme-preset selectors.
-        let ordered = [ThemePreset::StudioDark, ThemePreset::Midnight,
-            ThemePreset::PureBlack, ThemePreset::StudioLight]
+        // Keep catalogue indices stable for the theme-preset selectors. The
+        // defaults, Studio Dark and Studio Light, lead the featured row.
+        let ordered = [ThemePreset::StudioDark, ThemePreset::StudioLight,
+            ThemePreset::Midnight, ThemePreset::PureBlack]
             .into_iter()
             .chain(
                 ThemePreset::ALL
@@ -7893,8 +7919,8 @@ impl Workspace {
                             .when(selected, |el| el.font_weight(gpui::FontWeight::MEDIUM))
                             .text_color(if selected { theme.TEXT } else { theme.TEXT_DIM })
                             .child(match preset {
-                                ThemePreset::StudioDark => "Graphite",
-                                ThemePreset::StudioLight => "Paper",
+                                ThemePreset::StudioDark => "Studio Dark",
+                                ThemePreset::StudioLight => "Studio Light",
                                 ThemePreset::PureBlack => "Carbon",
                                 _ => preset.label(),
                             })
@@ -7921,8 +7947,7 @@ impl Workspace {
             .gap(px(0.0))
             .font_family(theme.FONT_UI)
             .child(settings_rows::page_title("Appearance"))
-            .child(div().pb(px(14.0)).text_size(px(13.0))
-                .text_color(theme.TEXT_DIM).child("Interface text is set in Inter. Code stays monospace."))
+            .child(div().flex_none().h(px(14.0)))
             .child(studio)
             .child(div().flex_none().h(px(28.0)))
             .child(div().flex_none().rounded(px(14.0)).overflow_hidden().bg(theme.PANEL_BG)
@@ -8046,19 +8071,20 @@ impl Workspace {
             .font_family(theme.FONT_UI)
             .child(div().px(px(10.0)).pb(px(14.0)).text_size(px(17.0))
                 .font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme.TEXT).child("Settings"));
-        for (index, (icon, label, page)) in [
-            ("⚙", "General", SidebarView::Settings),
-            ("♙", "Account and sync", SidebarView::Accounts),
-            ("⌘", "Models and logins", SidebarView::Accounts),
-            ("◉", "Appearance", SidebarView::Theme),
-            ("▤", "Conversation", SidebarView::Settings),
-            ("▣", "Machines", SidebarView::Settings),
-            ("▹", "Terminal", SidebarView::Settings),
-            ("♩", "Voice", SidebarView::Settings),
-            ("♧", "Notifications", SidebarView::Settings),
-            ("◌", "Stream mode", SidebarView::Settings),
-            ("⌨", "Keyboard", SidebarView::Settings),
-            ("↓", "Updates and about", SidebarView::Settings),
+        // Text-only sections: mixed glyphs never aligned as icons.
+        for (index, (label, page)) in [
+            ("General", SidebarView::Settings),
+            ("Account and sync", SidebarView::Accounts),
+            ("Models and logins", SidebarView::Accounts),
+            ("Appearance", SidebarView::Theme),
+            ("Conversation", SidebarView::Settings),
+            ("Machines", SidebarView::Settings),
+            ("Terminal", SidebarView::Settings),
+            ("Voice", SidebarView::Settings),
+            ("Notifications", SidebarView::Settings),
+            ("Stream mode", SidebarView::Settings),
+            ("Keyboard", SidebarView::Settings),
+            ("Updates and about", SidebarView::Settings),
         ].into_iter().enumerate() {
             let selected = if appearance { index == 3 } else { index == 0 };
             sections = sections.child(div()
@@ -8073,8 +8099,6 @@ impl Workspace {
                     this.sidebar_view = page;
                     cx.notify();
                 }))
-                .child(div().w(px(14.0)).flex_none().text_size(px(13.0))
-                    .text_color(if selected { theme.ACCENT } else { theme.TEXT_DIM }).child(icon))
                 .child(label));
         }
         div().size_full().flex().bg(theme.BG)
@@ -10012,6 +10036,49 @@ fn format_estimated_tokens(tokens: u64) -> String {
 /// Opacity for a working session's sidebar title, a gentle cosine breath.
 fn sidebar_title_pulse(phase: f32) -> f32 {
     0.75 + 0.25 * (phase * std::f32::consts::TAU).cos()
+}
+
+/// Session states the sidebar dot colours beyond live work.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SidebarDotState {
+    Quiet,
+    Working,
+    Waiting,
+    Failed,
+}
+
+fn sidebar_dot_state(status: &str) -> SidebarDotState {
+    match status.to_ascii_lowercase().as_str() {
+        "working" | "running" | "running_tools" | "streaming" => SidebarDotState::Working,
+        "waiting" | "needs_input" | "awaiting_input" => SidebarDotState::Waiting,
+        "crashed" | "error" | "failed" => SidebarDotState::Failed,
+        _ => SidebarDotState::Quiet,
+    }
+}
+
+/// Compact last-activity age for a sidebar row: `now`, `12m`, `3h`, `2d`.
+fn sidebar_session_age(session: &jcode_sdk::SessionInfo) -> Option<String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default();
+    let at = session
+        .last_active_at_ms
+        .or(session.updated_at_ms)
+        .and_then(|ms| u64::try_from(ms).ok())
+        .or_else(|| sidebar_session_created_ms(&session.session_id))?;
+    Some(compact_age(now_ms.saturating_sub(at) / 1_000))
+}
+
+fn compact_age(seconds: u64) -> String {
+    let minutes = seconds / 60;
+    match minutes {
+        0 => "now".into(),
+        1..=59 => format!("{minutes}m"),
+        60..=1439 => format!("{}h", minutes / 60),
+        1440..=10079 => format!("{}d", minutes / 1440),
+        _ => format!("{}w", minutes / 10080),
+    }
 }
 
 /// The TUI picker's per-session metadata line, from the fields the desktop
