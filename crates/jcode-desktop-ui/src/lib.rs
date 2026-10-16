@@ -41,6 +41,7 @@ mod resume_content_search;
 mod sound_events;
 mod sounds;
 mod terminal;
+mod machine_glyph;
 mod tool_icon;
 mod ui_actions;
 mod update_notes;

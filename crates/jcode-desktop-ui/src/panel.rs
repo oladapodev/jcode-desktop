@@ -4768,6 +4768,11 @@ impl Render for Panel {
                 input.set_trailing_inset(composer::VOICE_TRAILING_SPACE, cx);
             });
         }
+        // Only the home hero gets the taller editor. The chat dock stays compact.
+        if self.input.read(cx).is_hero() != fresh_session {
+            self.input
+                .update(cx, |input, cx| input.set_hero(fresh_session, cx));
+        }
         if self.input.read(cx).working_dir() != self.working_dir.as_deref() {
             let working_dir = self.working_dir.clone();
             self.input.update(cx, |input, _| {

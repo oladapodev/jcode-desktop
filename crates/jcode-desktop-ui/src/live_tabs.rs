@@ -13,7 +13,6 @@ const TAB_GAP: f32 = 6.0;
 pub(super) const TAB_STATUS_WIDTH: f32 = 236.0;
 const TAB_MACHINE_WIDTH: f32 = 138.0;
 pub(super) const HEADER_WIDE_BREAKPOINT: f32 = 900.0;
-const LAPTOP_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="12" rx="1.5"/><path d="M2 19h20l-2-3H4z"/></g></svg>"#;
 const REVIEW_TAB_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 9h8M8 15h8M12 12v6"/></g></svg>"#;
 /// Compact windows swap the connection status for a sidebar menu button.
 const TAB_MENU_WIDTH: f32 = 36.0;
@@ -1080,11 +1079,13 @@ impl Workspace {
                         .on_click(cx.listener(|_, _, _, cx| {
                             cx.stop_propagation(); Self::check_and_apply_update(); cx.notify();
                         }))
-                        .child(gpui::svg().data(LAPTOP_ICON)
-                            .size(px(14.0)).text_color(theme.TEXT_DIM)).child("This laptop")
-                        .child(div().flex_none().size(px(6.0)).rounded_full().bg(if connected {
-                            theme.OK
-                        } else { theme.WARN })),
+                        .child(crate::machine_glyph::laptop(
+                            16.0,
+                            theme.TEXT_DIM,
+                            Some(crate::machine_glyph::status_color(connected)),
+                            theme.BG,
+                        ))
+                        .child("This laptop"),
                     )
             ))
             .when(version_width > 0.0, |el| {

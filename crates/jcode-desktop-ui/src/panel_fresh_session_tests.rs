@@ -28,8 +28,8 @@ fn fresh_session_composer_is_centered_compact_and_stable_while_typing(
             .debug_bounds("fresh-session")
             .expect("fresh session paints");
         let input = vcx.debug_bounds("prompt-input").expect("input paints");
-        // Same compact docked shape as a started conversation.
-        assert!(input.size.height < px(crate::input::SPACIOUS_MIN_HEIGHT));
+        // The hero editor is taller than the docked chat composer.
+        assert!(input.size.height >= px(crate::input::HERO_MIN_HEIGHT));
         assert!(input.size.width <= px(crate::panel::home::COLUMN_WIDTH));
         assert!(input.left() >= fresh.left() && input.right() <= fresh.right());
         assert!((f32::from(input.center().x - fresh.center().x)).abs() < 1.);
@@ -53,7 +53,12 @@ fn fresh_session_composer_is_centered_compact_and_stable_while_typing(
     vcx.run_until_parked();
     assert!(vcx.debug_bounds("fresh-session").is_none());
     let submitted = vcx.debug_bounds("prompt-input").expect("input paints");
-    assert_eq!(submitted, input, "submission must not move or resize the editor");
+    // Submission keeps the editor's place and width. Only the taller home
+    // hero editor settles to the compact chat height.
+    assert_eq!(submitted.origin, input.origin, "submission must not move the editor");
+    assert_eq!(submitted.size.width, input.size.width);
+    assert!(submitted.size.height < input.size.height);
+    assert!(submitted.size.height < px(crate::input::SPACIOUS_MIN_HEIGHT));
     let row = vcx.debug_bounds("transcript-row-0").expect("prompt paints");
     let transcript = vcx.debug_bounds("transcript").unwrap();
     assert!((f32::from(row.top() - transcript.top())).abs() < 1.);
@@ -192,9 +197,12 @@ fn fresh_session_response_spends_space_before_moving_input(cx: &mut gpui::TestAp
             cx.notify();
         });
         vcx.run_until_parked();
-        // The editor keeps the same position and docked shape.
+        // The editor keeps the same position and width; the hero editor
+        // settles to the compact docked height.
         let docked = vcx.debug_bounds("prompt-input").unwrap();
-        assert_eq!(docked, initial);
+        assert_eq!(docked.origin, initial.origin);
+        assert_eq!(docked.size.width, initial.size.width);
+        assert!(docked.size.height < px(crate::input::SPACIOUS_MIN_HEIGHT));
         let initial = docked;
         panel.update(vcx, |panel, cx| {
             panel.streaming_text = "Small response".into();

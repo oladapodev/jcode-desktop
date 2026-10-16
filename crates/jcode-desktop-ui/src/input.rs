@@ -208,6 +208,9 @@ pub struct PromptInput {
     submission_enabled: bool,
     pending_session: bool,
     spacious: bool,
+    /// Home hero composer: a taller two-line editor (prototype
+    /// `min-h-[76px] pt-4`). The chat dock keeps the compact shape.
+    hero: bool,
     /// Right padding reserved for a control the host floats inside the box
     /// (the chat composer's voice button).
     trailing_inset: f32,
@@ -566,6 +569,7 @@ impl PromptInput {
             submission_enabled: true,
             pending_session: false,
             spacious: false,
+            hero: false,
             trailing_inset: 0.,
             chrome: true,
             example_prompts: false,
@@ -670,6 +674,18 @@ impl PromptInput {
 
     pub(crate) fn has_voice_preview(&self) -> bool {
         self.voice_preview.is_some()
+    }
+
+    pub(crate) fn is_hero(&self) -> bool {
+        self.hero
+    }
+
+    /// Use the taller home hero editor instead of the docked chat shape.
+    pub(crate) fn set_hero(&mut self, hero: bool, cx: &mut Context<Self>) {
+        if self.hero != hero {
+            self.hero = hero;
+            cx.notify();
+        }
     }
 
     pub(crate) fn set_spacious(&mut self, spacious: bool, cx: &mut Context<Self>) {
@@ -1823,6 +1839,8 @@ struct PrepaintState {
 const PLACEHOLDER_INDENT: Pixels = px(6.);
 /// Fresh-session composer height: one 16px line plus its 16px padding.
 pub(crate) const SPACIOUS_MIN_HEIGHT: f32 = 58.;
+/// Home hero editor height, matching the prototype's `min-h-[76px]`.
+pub(crate) const HERO_MIN_HEIGHT: f32 = 76.;
 
 fn selection_quads(
     line: &PromptLayout,
@@ -2509,6 +2527,9 @@ impl Render for PromptInput {
                     .pb(px(12.))
                     .min_h(px(54.))
                     .text_size(px(14.0))
+                    .when(self.hero && !spacious, |el| {
+                        el.pt(px(16.)).min_h(px(HERO_MIN_HEIGHT))
+                    })
                     .when(spacious, |el| {
                         // One line of 16px text plus padding.
                         el.min_h(px(SPACIOUS_MIN_HEIGHT))

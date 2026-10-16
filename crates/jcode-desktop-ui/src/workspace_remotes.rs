@@ -870,7 +870,11 @@ impl Workspace {
                     // a status pip for the connection.
                     .child(div().relative().flex_none().size(px(28.0)).flex().items_center().justify_center()
                         .rounded(px(8.0)).bg(theme.USER_BG).border_1().border_color(theme.PANEL_BORDER_FOCUS)
-                        .child(gpui::svg().data(include_bytes!("../../../assets/icons/computer.svg").as_slice())
+                        .child(gpui::svg().data(if host.is_none() {
+                                crate::machine_glyph::LAPTOP_ICON
+                            } else {
+                                include_bytes!("../../../assets/icons/computer.svg").as_slice()
+                            })
                             .size(px(14.0)).text_color(if host.is_none() { theme.ACCENT } else { theme.TEXT_DIM }))
                         .child(div().absolute().right(px(-3.0)).bottom(px(-3.0)).size(px(9.0)).rounded_full()
                             .border_2().border_color(theme.HEADER_BG)

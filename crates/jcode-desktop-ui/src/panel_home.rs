@@ -255,7 +255,6 @@ const FOLDER_ICON: &[u8] = lucide!(r#"<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-
 const CHEVRON_ICON: &[u8] = lucide!(r#"<path d="m6 9 6 6 6-6"/>"#);
 const BRANCH_ICON: &[u8] = lucide!(r#"<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>"#);
 const PLUS_ICON: &[u8] = lucide!(r#"<path d="M5 12h14"/><path d="M12 5v14"/>"#);
-const LAPTOP_ICON: &[u8] = lucide!(r#"<path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"/><path d="M20.054 15.987H3.946"/>"#);
 const CLOUD_ICON: &[u8] = lucide!(r#"<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>"#);
 const BUG_ICON: &[u8] = lucide!(r#"<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>"#);
 const NETWORK_ICON: &[u8] = lucide!(r#"<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>"#);
@@ -337,6 +336,8 @@ impl Panel {
             Some(host) => host.to_owned(),
         };
         let worktree_dir = directory.clone().filter(|_| branch.is_some());
+        let connected = self.status != "disconnected";
+        let ring = Theme::global().panel_background(self.surface_focused);
         div()
             .debug_selector(|| "home-chips".into())
             .mt(px(12.))
@@ -360,11 +361,17 @@ impl Panel {
             .child(
                 chip("home-chip-machine")
                     .tooltip(|_, cx| cx.new(|_| super::usage::MeterTooltip("Choose where new sessions run".into())).into())
-                    .child(icon(
-                        if remote.is_some() { CLOUD_ICON } else { LAPTOP_ICON },
-                        13.,
-                        if remote.is_none() { theme.ACCENT } else { theme.TEXT_DIM },
-                    ))
+                    .child(if remote.is_some() {
+                        icon(CLOUD_ICON, 13., theme.TEXT_DIM).into_any_element()
+                    } else {
+                        crate::machine_glyph::laptop(
+                            15.,
+                            theme.ACCENT,
+                            Some(crate::machine_glyph::status_color(connected)),
+                            ring,
+                        )
+                        .into_any_element()
+                    })
                     .child(
                         div()
                             .when(remote.is_none(), |el| el.text_color(theme.ACCENT))
