@@ -119,6 +119,10 @@ fn split_pairs(
 }
 
 fn view_rows(file: &DiffFile, split: bool, revealed: &HashSet<(usize, usize)>) -> Vec<Row> {
+    view_rows_with_edge(file, split, revealed, CONTEXT_EDGE)
+}
+
+fn view_rows_with_edge(file: &DiffFile, split: bool, revealed: &HashSet<(usize, usize)>, edge: usize) -> Vec<Row> {
     let mut rows = Vec::new();
     for (hunk, source) in file.hunks.iter().enumerate() {
         if !source.header.is_empty() {
@@ -147,15 +151,15 @@ fn view_rows(file: &DiffFile, split: bool, revealed: &HashSet<(usize, usize)>) -
                     }));
                 }
             };
-            if context && i - start > CONTEXT_EDGE * 2 + 1 && !revealed.contains(&(hunk, start)) {
-                append(start, start + CONTEXT_EDGE);
+            if context && i - start > edge * 2 + 1 && !revealed.contains(&(hunk, start)) {
+                append(start, start + edge);
                 rows.push(Row::Fold {
                     hunk,
                     start,
                     end: i,
                 });
                 // End context always remains visible, including trailing context.
-                for line in i - CONTEXT_EDGE..i {
+                for line in i - edge..i {
                     rows.push(Row::Line {
                         hunk,
                         left: Some(line),
@@ -248,6 +252,9 @@ impl DiffView {
     /// The dedicated review pane already owns the file list and status bar.
     pub(crate) fn set_embedded(&mut self) {
         self.embedded = true;
+        for (file, state) in self.preview.files.iter().zip(&mut self.files) {
+            state.rows = view_rows_with_edge(file, self.split, &state.revealed, 6);
+        }
     }
 
     pub fn set_status(&mut self, done: bool, failed: bool, cx: &mut Context<Self>) {
@@ -274,7 +281,8 @@ impl DiffView {
             Control::Unified | Control::Split => {
                 self.split = matches!(control, Control::Split);
                 for (file, state) in self.preview.files.iter().zip(&mut self.files) {
-                    state.rows = view_rows(file, self.split, &state.revealed);
+                    state.rows = view_rows_with_edge(file, self.split, &state.revealed,
+                        if self.embedded { 6 } else { CONTEXT_EDGE });
                     state.page = 0;
                 }
             }
@@ -283,7 +291,8 @@ impl DiffView {
             Control::Reveal { file, hunk, start } => {
                 let state = &mut self.files[file];
                 state.revealed.insert((hunk, start));
-                state.rows = view_rows(&self.preview.files[file], self.split, &state.revealed);
+                state.rows = view_rows_with_edge(&self.preview.files[file], self.split, &state.revealed,
+                    if self.embedded { 6 } else { CONTEXT_EDGE });
             }
             Control::Page { file, next } => {
                 let state = &mut self.files[file];
@@ -621,7 +630,7 @@ impl DiffView {
         }
         let start = state.page * PAGE_LINES;
         let end = (start + PAGE_LINES).min(state.rows.len());
-        if state.rows.len() > PAGE_LINES {
+        if state.rows.len() > PAGE_LINES && !self.embedded {
             card = card.child(
                 div()
                     .flex()
@@ -716,7 +725,7 @@ impl DiffView {
                         .into_any_element(),
                     Row::Fold { hunk, start, end } => self.control(
                         format!("diff-reveal-{index}-{hunk}-{start}"),
-                        format!("↕ Show {} unchanged lines", end - start - CONTEXT_EDGE * 2),
+                        format!("↕ Show {} unchanged lines", end - start - if self.embedded { 12 } else { CONTEXT_EDGE * 2 }),
                         false,
                         Control::Reveal {
                             file: index,
@@ -766,6 +775,15 @@ impl DiffView {
                 .when(!self.wrap, |el| el.overflow_x_scroll())
                 .child(body),
         )
+        .when(self.embedded && state.rows.len() > PAGE_LINES, |el| {
+            el.child(div().flex().items_center().gap_1().px_2().py_1().text_size(px(11.))
+                .when(state.page > 0, |row| row.child(self.control(
+                    format!("diff-prev-{index}"), "Previous changes", false,
+                    Control::Page { file: index, next: false }, cx)))
+                .when(end < state.rows.len(), |row| row.child(self.control(
+                    format!("diff-more-{index}"), "Show more changes", false,
+                    Control::Page { file: index, next: true }, cx))))
+        })
         .into_any_element()
     }
 }
