@@ -845,13 +845,6 @@ impl Workspace {
             .border_1()
             .border_color(theme.PANEL_BORDER)
             .bg(surface)
-            .shadow(vec![gpui::BoxShadow {
-                color: gpui::hsla(0., 0., 0., 0.22),
-                offset: gpui::point(px(0.), px(12.)),
-                blur_radius: px(32.),
-                spread_radius: px(-8.),
-                inset: false,
-            }])
             .overflow_hidden()
             .child(
                 div()

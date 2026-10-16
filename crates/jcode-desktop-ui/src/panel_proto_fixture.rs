@@ -14,6 +14,61 @@ pub(crate) fn enabled() -> bool {
         && std::env::var("JCODE_DESKTOP_SCREENSHOT_DEMO_DATA").as_deref() == Ok("prototype")
 }
 
+/// Robustness fixture (`--demo-data stress`): real-world data shapes the
+/// prototype never shows. Very long titles and paths, 50+ sessions in one
+/// project, untitled sessions, remote machines, a 24-agent swarm, a failed
+/// turn, a huge tool output and a 30-item plan. No model, no account.
+pub(crate) fn stress() -> bool {
+    crate::harness::screenshot_mode()
+        && std::env::var("JCODE_DESKTOP_SCREENSHOT_DEMO_DATA").as_deref() == Ok("stress")
+}
+
+pub(super) fn stress_items() -> Vec<Item> {
+    let huge = (0..4000)
+        .map(|line| format!("test suite::module_{line}::case_with_a_rather_long_descriptive_name ... ok ({line} ms) {}", "x".repeat(line % 180)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let long_path = format!("/home/dev/{}/src/main.rs", "really_long_directory_name_without_any_breaks".repeat(4));
+    let todos = (0..30)
+        .map(|index| TodoCardItem {
+            content: if index % 7 == 3 {
+                format!("Step {index}: {}", "rewrite the persistence layer so that reconnects never drop queued prompts ".repeat(3))
+            } else if index % 11 == 5 {
+                format!("Step{index}_{}", "averyveryverylongunbrokenidentifier".repeat(5))
+            } else {
+                format!("Step {index}: short task")
+            },
+            status: match index {
+                0..=9 => "completed",
+                10 => "in_progress",
+                _ => "pending",
+            }
+            .into(),
+            group: (index >= 20).then(|| "A follow-up group with a very long name that will not fit".into()),
+            blocked_by: vec![],
+            confidence: None,
+            completion_confidence: None,
+        })
+        .collect();
+    vec![
+        Item::User(format!("Please look at {long_path} and {}", "also this very long prompt keeps going and going ".repeat(30))),
+        tool("stress-read", "read", serde_json::json!({"intent": format!("Read {long_path}"), "file_path": long_path}), &"fn main() {}\n".repeat(200)),
+        tool("stress-bash", "bash", serde_json::json!({"intent": "Ran the whole test suite with a very long intent label that keeps going past the column", "command": format!("cargo test --workspace -- {}", "--include-ignored ".repeat(40))}), &huge),
+        Item::Tool {
+            call_id: "stress-fail".into(),
+            name: "bash".into(),
+            input: serde_json::json!({"command": "./scripts/deploy.sh --env production"}).to_string(),
+            output: String::new(),
+            done: true,
+            error: Some(format!("exit status 101: {}", "error[E0425]: cannot find value `undefined_symbol_with_a_long_name` in this scope ".repeat(12))),
+        },
+        Item::Todos(TodoCardPayload { todos, plan: TodoCardPlan::default(), goals: Vec::new() }),
+        Item::Assistant(format!("Here is a URL with no breaks: https://example.com/{}\n\nAnd a table:\n\n| a | b |\n|---|---|\n| {} | 2 |", "segment".repeat(60), "cell".repeat(80))),
+        Item::Error(format!("Provider request failed: {}", "429 Too Many Requests: rate limit exceeded for organization ".repeat(6))),
+        Item::Stopped(super::stop_reason::StopNotice::from_status("failed").expect("failed notice")),
+    ]
+}
+
 pub(super) fn context_tokens() -> u64 {
     let window = super::context_window_for_model(MODEL).unwrap_or(272_000);
     window * CONTEXT_PERCENT / 100

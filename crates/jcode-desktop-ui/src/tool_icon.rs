@@ -98,7 +98,11 @@ pub(crate) fn render_thread_badge_with_label(
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_size(px(13.5))
                 .line_height(px(20.))
-                .text_color(theme.TEXT_DIM)
+                .text_color(if !done && !failed {
+                    theme.TEXT
+                } else {
+                    theme.TEXT_DIM
+                })
                 .child(label),
         )
 }
@@ -163,7 +167,9 @@ fn status(done: bool, failed: bool) -> Status {
 }
 
 fn pulse_opacity(phase: f32) -> f32 {
-    0.7 + 0.3 * (phase * std::f32::consts::TAU).cos()
+    // PulseVeil's curve is content visibility, not fill opacity. Keep the
+    // tool's name and intent readable throughout the whole breathing cycle.
+    0.84 + 0.12 * (1.0 + (phase * std::f32::consts::TAU).cos()) / 2.0
 }
 
 fn render_colored(name: &str, color: Rgba) -> Div {
@@ -291,8 +297,8 @@ mod tests {
         assert_eq!(status(true, false), Status::Succeeded);
         assert_eq!(status(true, true), Status::Failed);
         assert_eq!(status(false, true), Status::Failed);
-        assert!((pulse_opacity(0.0) - 1.0).abs() < 0.001);
-        assert!((pulse_opacity(0.5) - 0.4).abs() < 0.001);
+        assert!((pulse_opacity(0.0) - 0.96).abs() < 0.001);
+        assert!((pulse_opacity(0.5) - 0.84).abs() < 0.001);
         assert!((pulse_opacity(1.0) - pulse_opacity(0.0)).abs() < 0.001);
     }
 

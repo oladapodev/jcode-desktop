@@ -30,10 +30,13 @@ fn fresh_session_composer_is_centered_compact_and_stable_while_typing(
         let input = vcx.debug_bounds("prompt-input").expect("input paints");
         // Same compact docked shape as a started conversation.
         assert!(input.size.height < px(crate::input::SPACIOUS_MIN_HEIGHT));
-        assert!(input.size.width <= px(760.));
+        assert!(input.size.width <= px(crate::panel::home::COLUMN_WIDTH));
         assert!(input.left() >= fresh.left() && input.right() <= fresh.right());
         assert!((f32::from(input.center().x - fresh.center().x)).abs() < 1.);
-        assert!((f32::from(input.center().y - fresh.center().y)).abs() < 70.);
+        // The hero composer sits under the greeting, in the upper half.
+        let heading = vcx.debug_bounds("fresh-session-heading").unwrap();
+        assert!(heading.bottom() <= input.top());
+        assert!(input.center().y < fresh.center().y);
         assert!(input.bottom() < fresh.bottom() - px(40.));
     }
     let input = vcx.debug_bounds("prompt-input").unwrap();
@@ -59,6 +62,87 @@ fn fresh_session_composer_is_centered_compact_and_stable_while_typing(
     panel.read_with(vcx, |panel, cx| {
         assert_eq!(panel.input.read(cx).content.as_ref(), "Next message");
     });
+}
+
+#[gpui::test]
+fn home_suggestion_card_fills_and_focuses_the_composer(cx: &mut gpui::TestAppContext) {
+    cx.update(crate::input::bind_keys);
+    let (workspace, vcx) = cx.add_window_view(|_, cx| {
+        let mut workspace =
+            crate::workspace::Workspace::for_test(crate::learning::Coach::new(), cx);
+        workspace.push_test_panel("session-a", cx);
+        workspace
+    });
+    let panel = workspace
+        .read_with(vcx, |workspace, _| workspace.test_panel(0))
+        .unwrap();
+    let handle = vcx.update(|window, _| window.window_handle());
+    vcx.simulate_window_resize(handle, gpui::size(px(1440.), px(900.)));
+    vcx.run_until_parked();
+    assert!(vcx.debug_bounds("home-starts").is_some());
+    const CARDS: [&str; 4] = [
+        "home-suggestion-0",
+        "home-suggestion-1",
+        "home-suggestion-2",
+        "home-suggestion-3",
+    ];
+    for (selector, (_, _, _, prompt)) in CARDS.into_iter().zip(crate::panel::home::STARTS.iter()) {
+        let card = vcx
+            .debug_bounds(selector)
+            .expect("suggestion card paints");
+        vcx.simulate_click(card.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        panel.read_with(vcx, |panel, cx| {
+            assert_eq!(panel.input.read(cx).content.as_ref(), *prompt);
+        });
+        vcx.update(|window, cx| {
+            assert!(panel.read(cx).input.read(cx).focus_handle.is_focused(window));
+        });
+    }
+    // A filled draft does not leave the home screen until it is sent.
+    assert!(vcx.debug_bounds("fresh-session").is_some());
+}
+
+#[gpui::test]
+fn home_recent_row_opens_the_session(cx: &mut gpui::TestAppContext) {
+    let (workspace, vcx) = cx.add_window_view(|_, cx| {
+        let mut workspace =
+            crate::workspace::Workspace::for_test(crate::learning::Coach::new(), cx);
+        workspace.push_test_panel("session-a", cx);
+        workspace
+    });
+    vcx.update(|_, cx| {
+        let target = jcode_sdk::SessionInfo {
+            user_connected: false,
+            session_id: "session-recent".into(),
+            working_dir: None,
+            title: Some("Recent work".into()),
+            status: "idle".into(),
+            transcript_bytes: None,
+            saved: false,
+            updated_at_ms: Some(1_000),
+            last_active_at_ms: None,
+            archived: false,
+            archived_at_ms: None,
+            save_label: None,
+            parent_session_id: None,
+            agent_label: None,
+            swarm_status: None,
+            edit_stats: None,
+        };
+        crate::panel::home::publish(&[target.clone()], cx);
+        workspace.update(cx, |workspace, _| workspace.push_test_session(target));
+    });
+    let handle = vcx.update(|window, _| window.window_handle());
+    vcx.simulate_window_resize(handle, gpui::size(px(1440.), px(1000.)));
+    vcx.run_until_parked();
+    let row = vcx.debug_bounds("home-recent-0").expect("recent row paints");
+    vcx.simulate_click(row.center(), gpui::Modifiers::default());
+    vcx.run_until_parked();
+    let opened = workspace.read_with(vcx, |workspace, cx| {
+        (0..4).filter_map(|i| workspace.test_panel(i)).any(|panel| panel.read(cx).session_id == "session-recent")
+    });
+    assert!(opened, "clicking a recent row opens that session");
 }
 
 #[gpui::test]
@@ -126,7 +210,14 @@ fn fresh_session_response_spends_space_before_moving_input(cx: &mut gpui::TestAp
             .top()
             .max(activity.bottom() + px(TRANSCRIPT_BOTTOM_GAP));
         let small = vcx.debug_bounds("prompt-input").unwrap();
-        assert_eq!(small, expected);
+        // The home composer sits high, so a small response can already
+        // exhaust the space; the measured move then rounds to a pixel.
+        assert_eq!(small.size, expected.size);
+        assert_eq!(small.origin.x, expected.origin.x);
+        assert!(
+            (f32::from(small.top() - expected.top())).abs() <= 1.,
+            "{small:?} vs {expected:?}"
+        );
         let first_row = vcx.debug_bounds("transcript-row-0").unwrap();
         let viewport = panel.read_with(vcx, |panel, _| panel.transcript_list.viewport_bounds());
         assert_eq!(

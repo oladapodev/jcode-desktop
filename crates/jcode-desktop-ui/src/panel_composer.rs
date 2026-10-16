@@ -317,7 +317,10 @@ impl Panel {
                     .text_size(px(10.5))
                     .font_family(theme.FONT_UI)
                     .text_color(theme.TEXT_FAINT)
-                    .child(
+                    // The home screen shows where a session starts as chips
+                    // under the card, so the route line keeps only status.
+                    .when(self.composer_hero, |el| el.justify_end())
+                    .when(!self.composer_hero, |el| el.child(
                         div()
                             .min_w_0()
                             .flex()
@@ -336,8 +339,10 @@ impl Panel {
                                     .font_family(theme.FONT_MONO)
                                     .child(match detail { Some(parent) => format!("{parent}/{name}"), None => name })
                             })),
-                    )
-                    .child(div().flex().items_center().gap_1().child("@ files  |  / commands").child(meta)),
+                    ))
+                    .child(div().flex().items_center().gap_1()
+                        .when(!self.composer_hero, |el| el.child("@ files  |  / commands"))
+                        .child(meta)),
             )
             .into_any_element()
     }

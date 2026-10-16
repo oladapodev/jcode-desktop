@@ -59,6 +59,21 @@ pub(crate) struct CloseChangeReview {
     pub panel: gpui::EntityId,
 }
 
+/// Open (or focus) a known session, from the home screen's recent list.
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(no_json)]
+pub(crate) struct OpenRecentSession {
+    pub session_id: String,
+}
+
+/// Start naming a new worktree of the checkout at `directory`, exactly like
+/// the sidebar project row's worktree button.
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(no_json)]
+pub(crate) struct BeginWorktree {
+    pub directory: String,
+}
+
 gpui::actions!(
     workspace,
     [

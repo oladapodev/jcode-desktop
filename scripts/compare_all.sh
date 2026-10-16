@@ -14,13 +14,15 @@ mkdir -p "$OUT"
 VIEWS=(
   "chat|chat-done|--demo-data prototype"
   "chat-light|chat-paper|--demo-data prototype --theme studio-light"
-  "tools|chat-live|--demo-data prototype --transcript orb-tools"
+  "tools|chat-live|--transcript tool-streaming"
+  "tools-light|chat-paper|--transcript tool-streaming --theme studio-light"
   "home|home|--transcript empty"
   "agents|agents|--swarm --agents-view"
   "agents-light|agents-paper|--swarm --agents-view --theme studio-light"
   "code|code|--panels 2 --transcript diff-rich"
   "code-light|code-paper|--panels 2 --transcript diff-rich --theme studio-light"
-  "review|review|--transcript diff-rich"
+  "review|review|--demo-data prototype"
+  "terminal|terminal|--files --demo-data prototype"
   "settings|settings-appearance|--accounts"
 )
 

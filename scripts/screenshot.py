@@ -79,7 +79,7 @@ def main():
     parser.add_argument("--hide-sidebar", action="store_true", help="start with the sidebar hidden (Ctrl+B), showing the icon rail on wide windows")
     parser.add_argument("--collections", nargs="?", const="1", choices=("1", "menu", "form"),
                         help="show user-created collections above project groups (menu: a row's Move menu open, form: the editor)")
-    parser.add_argument("--demo-data", choices=("prototype",), default=os.environ.get("JCODE_DESKTOP_SCREENSHOT_DEMO_DATA") or None,
+    parser.add_argument("--demo-data", choices=("prototype", "stress"), default=os.environ.get("JCODE_DESKTOP_SCREENSHOT_DEMO_DATA") or None,
                         help="seed offline data that mirrors the web prototype (projects, sessions, transcript, plan, model, account)")
     parser.add_argument("--swarm", action="store_true", help="load nested swarm fixtures (children remain hidden in the sidebar)")
     parser.add_argument("--agents-view", action="store_true", help="open the native Agents swarm map with the --swarm fixture")

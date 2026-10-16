@@ -448,7 +448,7 @@ impl DiffView {
             .flex_1()
             .min_w_0()
             .min_h(px(CODE_LINE_HEIGHT))
-            .when_some(tint, |el, color| el.bg(to_hsla(color).opacity(0.08)))
+            .when_some(tint, |el, color| el.bg(to_hsla(color).opacity(0.14)))
             .when(line.kind == LineKind::Meta, |el| {
                 el.text_color(theme.TEXT_FAINT)
             })

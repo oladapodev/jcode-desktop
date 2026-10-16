@@ -1311,6 +1311,7 @@ impl Workspace {
                 }
             }
             workspace.init_prototype_fixture(cx);
+            crate::panel::home::publish(&workspace.sessions, cx);
             if std::env::var("JCODE_DESKTOP_SCREENSHOT_TRANSCRIPT").as_deref() == Ok("publish") {
                 workspace.open_publish_fixture(cx);
             }
@@ -2126,6 +2127,12 @@ impl Workspace {
         self.slots.get(index).map(|slot| slot.panel.clone())
     }
 
+    /// Register a known session without a runtime catalog update.
+    #[cfg(test)]
+    pub(crate) fn push_test_session(&mut self, session: jcode_sdk::SessionInfo) {
+        self.sessions.push(session);
+    }
+
     #[cfg(test)]
     pub fn test_focus_position(&self) -> Option<usize> {
         self.row_indices(self.active_row)
@@ -2260,6 +2267,7 @@ impl Workspace {
                     }
                 }
                 self.sessions = sessions;
+                crate::panel::home::publish(&self.sessions, cx);
                 // Composer examples come from todos left in closed sessions.
                 // Reading every todo file belongs off the UI thread, and unit
                 // tests must not pick up the developer's own sessions.
@@ -9391,6 +9399,19 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::move_panel_to_last))
             .on_action(cx.listener(Self::open_change_review))
             .on_action(cx.listener(Self::close_change_review))
+            .on_action(cx.listener(|this, action: &crate::ui_actions::OpenRecentSession, window, cx| {
+                if let Some(session) = this
+                    .sessions
+                    .iter()
+                    .find(|session| session.session_id == action.session_id)
+                    .cloned()
+                {
+                    this.activate_session(session, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, action: &crate::ui_actions::BeginWorktree, window, cx| {
+                this.begin_worktree(action.directory.clone(), window, cx);
+            }))
             .on_action(cx.listener(Self::new_panel))
             .on_action(cx.listener(Self::new_panel_in_pinned_directory))
             .on_action(cx.listener(Self::fork_panel))

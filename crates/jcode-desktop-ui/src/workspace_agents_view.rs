@@ -131,7 +131,7 @@ impl Workspace {
         div()
             .id(("agents-map-agent", index))
             .debug_selector(move || format!("agents-map-agent-{index}"))
-            .min_w_0().flex_1().h(px(88.0)).px(px(9.0)).py(px(10.0))
+            .min_w_0().flex_1().h(px(88.0)).px(px(9.0)).py(px(10.0)).overflow_hidden()
             .flex().flex_col().items_center().justify_center().gap(px(5.0))
             .rounded(px(14.0)).bg(theme.HEADER_BG)
             .when(state == sidebar_swarm::AgentState::Working, |el| {
@@ -142,13 +142,13 @@ impl Workspace {
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.agents_open_session(&id, window, cx);
             }))
-            .child(div().min_w_0().flex().items_center().justify_center().gap(px(6.0))
+            .child(div().w_full().min_w_0().flex().items_center().justify_center().gap(px(6.0))
                 .child(if state == sidebar_swarm::AgentState::Done {
                     map_icon(include_bytes!("../../../assets/icons/check.svg"), state.color(), 12.0)
                 } else {
-                    div().size(px(7.0)).rounded_full().bg(state.color()).into_any_element()
+                    div().flex_none().size(px(7.0)).rounded_full().bg(state.color()).into_any_element()
                 })
-                .child(div().truncate().text_size(px(13.0)).font_weight(gpui::FontWeight::MEDIUM).child(member.name)))
+                .child(div().min_w_0().truncate().text_size(px(13.0)).font_weight(gpui::FontWeight::MEDIUM).child(member.name)))
             .child(div().text_size(px(11.0)).text_color(state.color()).child(if state == sidebar_swarm::AgentState::Idle { "queued" } else { state.word() }))
             // There is no server-side numeric progress. A short live segment
             // communicates motion without claiming a completion percentage.
@@ -156,9 +156,9 @@ impl Workspace {
                 .rounded_full().bg(theme.TEXT.opacity(0.09))
                     .child(div().h_full().w(relative(0.35)).rounded_full().bg(state.color()))
             ))
-            .child(div().flex().items_center().justify_center().gap(px(5.0)).text_color(theme.TEXT_DIM)
+            .child(div().w_full().min_w_0().flex().items_center().justify_center().gap(px(5.0)).text_color(theme.TEXT_DIM)
                 .child(map_icon(machine_icon(&machine), theme.TEXT_DIM, 11.0))
-                .child(div().truncate().text_size(px(10.5)).child(machine)))
+                .child(div().min_w_0().truncate().text_size(px(10.5)).child(machine)))
             .into_any_element()
     }
 
@@ -226,7 +226,7 @@ impl Workspace {
         if let Some((root, children)) = active_swarm {
             let visible = children.iter().take(6).collect::<Vec<_>>();
             let root_id = root.session_id.clone();
-            let root_title = root.title.clone().unwrap_or_else(|| "Active swarm".into());
+            let root_title = root.title.clone().filter(|title| !title.trim().is_empty()).unwrap_or_else(|| "Active swarm".into());
             let root_state = sidebar_swarm::AgentState::from_status(Some(&root.status));
             let states = visible.iter().map(|child| sidebar_swarm::Member::of(&child.session).state).collect();
             let logo = self.slots.iter().find_map(|slot| {
@@ -237,10 +237,10 @@ impl Workspace {
                 .debug_selector(|| "agents-swarm-map".into())
                 .child(div().flex().items_center().gap(px(11.0))
                     .child(div().min_w_0().truncate().font_weight(gpui::FontWeight::SEMIBOLD).text_size(px(13.5)).child(root_title))
-                    .child(div().px(px(9.0)).py(px(3.0)).rounded_full().bg(theme.ACCENT_DIM)
+                    .child(div().flex_none().px(px(9.0)).py(px(3.0)).rounded_full().bg(theme.ACCENT_DIM)
                         .text_size(px(11.0)).text_color(theme.ACCENT).child(format!("{} agents", children.len())))
                     .child(div().flex_1())
-                    .child(div().text_size(px(11.5)).text_color(theme.TEXT_DIM).child(format!("coordinator on {}", location(root)))))
+                    .child(div().flex_shrink_0().max_w(px(260.0)).truncate().text_size(px(11.5)).text_color(theme.TEXT_DIM).child(format!("coordinator on {}", location(root)))))
                 .child(div().mt(px(16.0)).flex().justify_center()
                     .child(div().id("agents-map-coordinator").debug_selector(|| "agents-map-coordinator".into())
                         .h(px(44.0)).px(px(14.0)).flex().items_center().gap(px(9.0))
@@ -290,8 +290,8 @@ impl Workspace {
                 .hover(|el| el.bg(Theme::global().USER_BG))
                 .on_click(cx.listener(move |this, _, window, cx| this.agents_open_session(&id, window, cx)))
                 .child(div().min_w_0().flex_1().truncate().text_size(px(12.5)).child(member.name))
-                .child(div().text_size(px(11.5)).text_color(theme.TEXT_DIM).child(location(session)))
-                .child(div().w(px(75.0)).text_align(gpui::TextAlign::Right).text_size(px(11.5))
+                .child(div().flex_shrink_0().max_w(px(260.0)).truncate().text_size(px(11.5)).text_color(theme.TEXT_DIM).child(location(session)))
+                .child(div().flex_none().w(px(75.0)).text_align(gpui::TextAlign::Right).text_size(px(11.5))
                     .text_color(member.state.color()).child(member.state.word())));
         }
         div().id("agents-view").size_full().bg(theme.BG).overflow_y_scroll()

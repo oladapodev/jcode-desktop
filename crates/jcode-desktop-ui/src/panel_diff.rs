@@ -6,6 +6,15 @@ use crate::diff::{FileDiff, tool_diffs};
 mod edit_preview;
 pub(super) use edit_preview::EditPreviews;
 
+/// One edited file in the session, aggregated across tool calls.
+pub(super) struct SessionChange {
+    pub path: String,
+    pub added: usize,
+    pub removed: usize,
+    /// (tool name, input, output, file index) of the latest edit to it.
+    request: (String, String, String, usize),
+}
+
 pub(super) struct DiffReview {
     files: Arc<Vec<FileDiff>>,
     selected: usize,
@@ -379,7 +388,7 @@ impl Panel {
         let failed = error.is_some();
         if done && !failed && !self.is_busy() && files.len() >= 3
         {
-            return Some(self.render_change_summary(name, input, output, &files, cx));
+            return Some(self.render_change_summary(call_id, name, input, output, &files, cx));
         }
         let intent = edit_preview_intent(input);
         let mut card = div()
@@ -432,6 +441,7 @@ impl Panel {
     /// The full diff opens in the review pane from Review or any file row.
     fn render_change_summary(
         &self,
+        call_id: &str,
         name: &str,
         input: &str,
         output: &str,
@@ -459,7 +469,68 @@ impl Panel {
         } else {
             format!("{} files changed", files.len())
         };
+        let kept = self.kept_changes.contains(call_id);
+        let keep_id = call_id.to_owned();
+        let mut actions = div().flex_none().flex().items_center().gap_1();
+        if kept {
+            actions = actions.child(
+                div()
+                    .debug_selector(|| "change-summary-kept".into())
+                    .px_2()
+                    .text_size(px(12.))
+                    .text_color(theme.TEXT_FAINT)
+                    .child("Kept"),
+            );
+        }
+        // Undo is intentionally absent: jcode only rewinds the conversation
+        // (`/rewind`), it has no revert for edited files, so the control
+        // would not do what its label promises.
+        actions = actions
+            .child(
+                div()
+                    .id("change-summary-review")
+                    .debug_selector(|| "change-summary-review".into())
+                    .px_3()
+                    .py_1()
+                    .rounded_full()
+                    .text_size(px(12.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.TEXT_DIM)
+                    .cursor_pointer()
+                    .hover(|el| el.bg(theme.USER_BG).text_color(theme.TEXT))
+                    .child("Review")
+                    .on_click(move |_, window, cx| {
+                        review_focus.focus(window, cx);
+                        window.dispatch_action(Box::new(review.clone()), cx);
+                        cx.stop_propagation();
+                    }),
+            )
+            .when(!kept, |actions| {
+                actions.child(
+                    div()
+                        .id("change-summary-keep")
+                        .debug_selector(|| "change-summary-keep".into())
+                        .px_3()
+                        .py_1()
+                        .rounded_full()
+                        .text_size(px(12.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .bg(theme.ACCENT)
+                        .text_color(theme.PANEL_BG)
+                        .cursor_pointer()
+                        .hover(|el| el.opacity(0.9))
+                        .child("Keep")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.kept_changes.insert(keep_id.clone());
+                            this.transcript_measurements.dirty = true;
+                            cx.notify();
+                            cx.stop_propagation();
+                        })),
+                )
+            });
         let header = div()
+            .w_full()
+            .min_w_0()
             .flex()
             .items_center()
             .gap_2()
@@ -467,51 +538,45 @@ impl Panel {
             .py_1p5()
             .child(
                 div()
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.TEXT)
-                    .child(title),
+                    .min_w_0()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme.TEXT)
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .font_family(theme.FONT_MONO)
+                            .text_size(px(12.))
+                            .text_color(theme.OK)
+                            .child(format!("+{added}")),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .font_family(theme.FONT_MONO)
+                            .text_size(px(12.))
+                            .text_color(theme.ERROR)
+                            .child(format!("−{removed}")),
+                    ),
             )
-            .child(
-                div()
-                    .font_family(theme.FONT_MONO)
-                    .text_size(px(12.))
-                    .text_color(theme.OK)
-                    .child(format!("+{added}")),
-            )
-            .child(
-                div()
-                    .font_family(theme.FONT_MONO)
-                    .text_size(px(12.))
-                    .text_color(theme.ERROR)
-                    .child(format!("−{removed}")),
-            )
-            .child(
-                div().ml_auto().flex().gap_1().child(
-                    div()
-                        .id("change-summary-review")
-                        .debug_selector(|| "change-summary-review".into())
-                        .px_3()
-                        .py_1()
-                        .rounded_full()
-                        .text_size(px(12.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.TEXT_DIM)
-                        .cursor_pointer()
-                        .hover(|el| el.bg(theme.USER_BG).text_color(theme.TEXT))
-                        .child("Review")
-                        .on_click(move |_, window, cx| {
-                            review_focus.focus(window, cx);
-                            window.dispatch_action(Box::new(review.clone()), cx);
-                            cx.stop_propagation();
-                        }),
-                ),
-            );
+            .child(actions);
         let mut card = div()
             .id("change-summary")
             .debug_selector(|| "change-summary".into())
             .my_2()
             .flex_none()
+            .w_full()
             .min_w_0()
             .flex()
             .flex_col()
@@ -521,6 +586,9 @@ impl Panel {
             .p_1p5()
             .font_family(theme.FONT_UI)
             .child(header);
+        if kept {
+            return card.into_any_element();
+        }
         for (index, file) in files.iter().enumerate() {
             let (dir, leaf) = match file.path.rsplit_once('/') {
                 Some((dir, leaf)) => (format!("{dir}/"), leaf.to_owned()),
@@ -531,6 +599,7 @@ impl Panel {
             card = card.child(
                 div()
                     .id(("change-summary-row", index))
+                    .debug_selector(move || format!("change-summary-row-{index}").into())
                     .flex()
                     .items_center()
                     .gap_3()
@@ -578,6 +647,159 @@ impl Panel {
             );
         }
         card.into_any_element()
+    }
+
+    /// Files edited this session, one row per path with summed +/- counts.
+    /// Each row opens the most recent edit that touched it.
+    pub(super) fn session_changes(&self) -> Vec<SessionChange> {
+        let mut changes: Vec<SessionChange> = Vec::new();
+        for item in self.items.iter() {
+            let Item::Tool {
+                name,
+                input,
+                output,
+                done: true,
+                error: None,
+                ..
+            } = item
+            else {
+                continue;
+            };
+            let files = inline_result_files(name, input, output);
+            for (index, file) in files.iter().enumerate() {
+                let request = (name.clone(), input.clone(), output.clone(), index);
+                match changes.iter_mut().find(|change| change.path == file.path) {
+                    Some(change) => {
+                        change.added += file.added();
+                        change.removed += file.removed();
+                        change.request = request;
+                    }
+                    None => changes.push(SessionChange {
+                        path: file.path.clone(),
+                        added: file.added(),
+                        removed: file.removed(),
+                        request,
+                    }),
+                }
+            }
+        }
+        changes
+    }
+
+    fn change_request(
+        &self,
+        change: &SessionChange,
+        cx: &mut Context<Self>,
+    ) -> crate::ui_actions::OpenChangeReview {
+        let (name, input, output, selected) = change.request.clone();
+        crate::ui_actions::OpenChangeReview {
+            source: cx.entity_id(),
+            name,
+            input,
+            output,
+            selected,
+            done: true,
+            failed: false,
+        }
+    }
+
+    /// Request for the pane's maximise action: the full review of the latest
+    /// edit. `None` when the session has edited nothing.
+    pub(super) fn latest_change_review(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<crate::ui_actions::OpenChangeReview> {
+        let changes = self.session_changes();
+        let last = changes.last()?;
+        let mut request = self.change_request(last, cx);
+        request.selected = 0;
+        Some(request)
+    }
+
+    /// The side pane's "Changes" tab body.
+    pub(super) fn render_changes_list(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = Theme::global();
+        let changes = self.session_changes();
+        let focus = self.focus_handle.clone();
+        let mut list = div()
+            .id("changes-list")
+            .debug_selector(|| "changes-list".into())
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .px_1p5()
+            .pb_2()
+            .font_family(theme.FONT_UI);
+        if changes.is_empty() {
+            return list
+                .child(
+                    div()
+                        .px_2p5()
+                        .py_1p5()
+                        .text_size(px(12.5))
+                        .text_color(theme.TEXT_FAINT)
+                        .child("No edits yet"),
+                )
+                .into_any_element();
+        }
+        for (index, change) in changes.iter().enumerate() {
+            let (dir, leaf) = match change.path.rsplit_once('/') {
+                Some((dir, leaf)) => (format!("{dir}/"), leaf.to_owned()),
+                None => (String::new(), change.path.clone()),
+            };
+            let open = self.change_request(change, cx);
+            let focus = focus.clone();
+            list = list.child(
+                div()
+                    .id(("changes-row", index))
+                    .debug_selector(move || format!("changes-row-{index}").into())
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .px_2p5()
+                    .py_1p5()
+                    .rounded(px(10.))
+                    .cursor_pointer()
+                    .hover(|el| el.bg(theme.USER_BG))
+                    .on_click(move |_, window, cx| {
+                        focus.focus(window, cx);
+                        window.dispatch_action(Box::new(open.clone()), cx);
+                        cx.stop_propagation();
+                    })
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .flex()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .font_family(theme.FONT_MONO)
+                            .text_size(px(12.5))
+                            .text_color(theme.TEXT_DIM)
+                            .child(div().flex_none().text_color(theme.TEXT_FAINT).child(dir))
+                            .child(div().flex_none().child(leaf)),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .flex()
+                            .gap_1p5()
+                            .font_family(theme.FONT_MONO)
+                            .text_size(px(11.5))
+                            .child(
+                                div()
+                                    .text_color(theme.OK)
+                                    .child(format!("+{}", change.added)),
+                            )
+                            .child(
+                                div()
+                                    .text_color(theme.ERROR)
+                                    .child(format!("−{}", change.removed)),
+                            ),
+                    ),
+            );
+        }
+        list.into_any_element()
     }
 
     pub(crate) fn is_change_review(&self) -> bool {
@@ -1478,5 +1700,145 @@ mod tests {
         vcx.simulate_click(close.center(), gpui::Modifiers::default());
         vcx.run_until_parked();
         assert!(panel.read_with(vcx, |p, _| p.diff_review.is_none()));
+    }
+
+    fn summary_items() -> Vec<Item> {
+        let patch = "*** Begin Patch\n*** Update File: src/a.rs\n@@\n-old\n+new\n*** Add File: src/b.rs\n+one\n+two\n*** Add File: assets/c.toml\n+x\n*** End Patch";
+        vec![
+            Item::User("Make the edits".into()),
+            Item::Todos(
+                serde_json::from_value(serde_json::json!({
+                    "todos": [{"id":"one","content":"Edit files","status":"in_progress","priority":"high"}]
+                }))
+                .unwrap(),
+            ),
+            Item::Tool {
+                call_id: "edit-1".into(),
+                name: "apply_patch".into(),
+                input: serde_json::json!({"intent": "Edit three files", "patch_text": patch})
+                    .to_string(),
+                output: "Applied".into(),
+                done: true,
+                error: None,
+            },
+            Item::Assistant("Done".into()),
+        ]
+    }
+
+    fn summary_workspace<'a>(
+        cx: &'a mut gpui::TestAppContext,
+    ) -> (
+        Entity<crate::workspace::Workspace>,
+        Entity<Panel>,
+        &'a mut gpui::VisualTestContext,
+    ) {
+        cx.update(|cx| crate::bind_workspace_keys(cx));
+        let (workspace, vcx) = cx.add_window_view(|_, cx| {
+            let mut workspace =
+                crate::workspace::Workspace::for_test(crate::learning::Coach::new(), cx);
+            workspace.push_test_panel("session-a", cx);
+            workspace
+        });
+        let panel = workspace
+            .read_with(vcx, |workspace, _| workspace.test_panel(0))
+            .unwrap();
+        let handle = vcx.update(|window, _| window.window_handle());
+        vcx.simulate_window_resize(handle, gpui::size(px(1440.), px(900.)));
+        panel.update(vcx, |panel, cx| {
+            *panel.items = summary_items();
+            cx.notify();
+        });
+        vcx.run_until_parked();
+        (workspace, panel, vcx)
+    }
+
+    #[gpui::test]
+    fn change_summary_keep_collapses_and_undo_is_absent(cx: &mut gpui::TestAppContext) {
+        let (_workspace, panel, vcx) = summary_workspace(cx);
+        assert!(vcx.debug_bounds("change-summary").is_some());
+        assert!(vcx.debug_bounds("change-summary-review").is_some());
+        // jcode has no file revert, only conversation rewind, so no Undo.
+        assert!(vcx.debug_bounds("change-summary-undo").is_none());
+        assert!(vcx.debug_bounds("change-summary-row-2").is_some());
+        let keep = vcx.debug_bounds("change-summary-keep").expect("Keep paints");
+        vcx.simulate_click(keep.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        assert!(panel.read_with(vcx, |p, _| p.kept_changes.contains("edit-1")));
+        assert!(vcx.debug_bounds("change-summary-kept").is_some());
+        assert!(vcx.debug_bounds("change-summary-keep").is_none());
+        assert!(vcx.debug_bounds("change-summary-row-0").is_none());
+        assert!(vcx.debug_bounds("change-summary").is_some());
+    }
+
+    #[gpui::test]
+    fn change_summary_file_row_opens_that_file_in_review(cx: &mut gpui::TestAppContext) {
+        let (workspace, _panel, vcx) = summary_workspace(cx);
+        let row = vcx.debug_bounds("change-summary-row-1").unwrap();
+        vcx.simulate_click(row.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        let review = workspace.read_with(vcx, |w, _| w.test_panel(1).expect("review opens"));
+        review.read_with(vcx, |p, _| {
+            assert!(p.is_change_review());
+            assert_eq!(p.diff_review.as_ref().unwrap().selected, 1);
+        });
+    }
+
+    #[gpui::test]
+    fn changes_tab_lists_session_edits_and_rows_open_review(cx: &mut gpui::TestAppContext) {
+        let (workspace, panel, vcx) = summary_workspace(cx);
+        assert!(vcx.debug_bounds("changes-list").is_none());
+        let tab = vcx.debug_bounds("changes-tab").expect("tab paints");
+        vcx.simulate_click(tab.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        assert!(panel.read_with(vcx, |p, _| p.side_pane_changes));
+        assert!(vcx.debug_bounds("changes-list").is_some());
+        let changes = panel.read_with(vcx, |p, _| {
+            p.session_changes()
+                .into_iter()
+                .map(|c| (c.path, c.added, c.removed))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            changes,
+            vec![
+                ("src/a.rs".into(), 1, 1),
+                ("src/b.rs".into(), 2, 0),
+                ("assets/c.toml".into(), 1, 0)
+            ]
+        );
+        let row = vcx.debug_bounds("changes-row-2").expect("row paints");
+        vcx.simulate_click(row.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        let review = workspace.read_with(vcx, |w, _| w.test_panel(1).expect("review opens"));
+        review.read_with(vcx, |p, _| {
+            assert_eq!(p.diff_review.as_ref().unwrap().selected, 2)
+        });
+        // Back to the plan.
+        let plan = vcx.debug_bounds("plan-tab-active").unwrap();
+        vcx.simulate_click(plan.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        assert!(!panel.read_with(vcx, |p, _| p.side_pane_changes));
+        assert!(vcx.debug_bounds("changes-list").is_none());
+    }
+
+    #[gpui::test]
+    fn changes_maximise_opens_full_review(cx: &mut gpui::TestAppContext) {
+        let (workspace, _panel, vcx) = summary_workspace(cx);
+        let button = vcx.debug_bounds("changes-maximize").expect("maximise paints");
+        vcx.simulate_click(button.center(), gpui::Modifiers::default());
+        vcx.run_until_parked();
+        let review = workspace.read_with(vcx, |w, _| w.test_panel(1).expect("review opens"));
+        review.read_with(vcx, |p, _| assert!(p.is_change_review()));
+    }
+
+    #[gpui::test]
+    fn changes_maximise_is_hidden_without_edits(cx: &mut gpui::TestAppContext) {
+        let (_workspace, panel, vcx) = summary_workspace(cx);
+        panel.update(vcx, |panel, cx| {
+            *panel.items = summary_items().into_iter().filter(|i| !matches!(i, Item::Tool { .. })).collect();
+            cx.notify();
+        });
+        vcx.run_until_parked();
+        assert!(vcx.debug_bounds("changes-maximize").is_none());
     }
 }

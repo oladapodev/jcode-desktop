@@ -151,6 +151,8 @@ mod tool_streaming;
 mod run_summary;
 #[path = "panel_proto_fixture.rs"]
 pub(crate) mod proto_fixture;
+#[path = "panel_home.rs"]
+pub(crate) mod home;
 #[path = "panel_usage.rs"]
 pub(crate) mod usage;
 #[path = "panel_voice.rs"]
@@ -509,6 +511,10 @@ pub struct Panel {
     image_preview: Option<TranscriptImage>,
     diff_review: Option<diff_review::DiffReview>,
     edit_previews: diff_review::EditPreviews,
+    /// Edit cards the user dismissed with Keep, keyed by call id.
+    kept_changes: HashSet<String>,
+    /// The wide side pane shows the session's edited files, not the plan.
+    side_pane_changes: bool,
     image_preview_zoom: f32,
     image_preview_scroll: gpui::ScrollHandle,
     image_preview_drag: Option<gpui::Point<gpui::Pixels>>,
@@ -545,6 +551,9 @@ pub struct Panel {
     /// Measured composer card width (0 until painted). Narrow cards drop
     /// secondary chip labels, like the prototype's container queries.
     composer_width: f32,
+    /// Set only while the home screen renders its hero composer, whose
+    /// context chips replace the route line under the card.
+    composer_hero: bool,
     /// Last draft emptiness seen, so typing repaints the panel only when the
     /// send button changes.
     composer_has_draft: bool,
@@ -943,8 +952,12 @@ impl Panel {
         let usage_fixture = crate::harness::screenshot_mode()
             && matches!(fixture.as_deref(), Some("tokens" | "orb-todos"));
         // Prototype demo data fills only the first panel's session.
-        let proto_fixture = (proto_fixture::enabled() && session_id == "screenshot-fixture")
+        let proto_fixture = (proto_fixture::enabled()
+            && session_id == "screenshot-fixture"
+            && fixture.as_deref() != Some("empty"))
             .then(proto_fixture::items);
+        let stress_fixture = (proto_fixture::stress() && session_id == "screenshot-fixture")
+            .then(proto_fixture::stress_items);
         let activity_status = if crate::harness::screenshot_mode() {
             match fixture.as_deref() {
                 Some("orb-working" | "orb-todos") => "running",
@@ -982,7 +995,7 @@ impl Panel {
                 usage_fixture.then_some(100_000)
             },
             response_stats: response_stats::Tracker::default(),
-            items: proto_fixture.unwrap_or_else(|| demo_items(fixture.as_deref())).into(),
+            items: proto_fixture.or(stress_fixture).unwrap_or_else(|| demo_items(fixture.as_deref())).into(),
             streaming_text: if streaming_fixture {
                 "I’m checking the implementation and updating the active panel indicators as the response arrives…".into()
             } else {
@@ -1014,6 +1027,8 @@ impl Panel {
             image_preview: None,
             diff_review: None,
             edit_previews: diff_review::EditPreviews::default(),
+            kept_changes: HashSet::new(),
+            side_pane_changes: false,
             image_preview_zoom: 1.0,
             image_preview_scroll: gpui::ScrollHandle::new(),
             image_preview_drag: None,
@@ -1040,6 +1055,7 @@ impl Panel {
             transcript_end_visible: true,
             composer_dock_height: 0.0,
             composer_width: 0.0,
+            composer_hero: false,
             composer_has_draft: false,
             steady_activity: Default::default(),
             transcript_end_pad: 0.0,
@@ -4050,6 +4066,7 @@ impl Panel {
                         .id(("tool", index))
                         .debug_selector(|| "tool-edit".into())
                         .flex_none()
+                        .w_full()
                         .ml(px(offset))
                         .opacity(opacity)
                         .child(preview)
@@ -4162,11 +4179,7 @@ impl Panel {
                     })
                     .unwrap_or(if expanded { 1.0 } else { 0.0 });
                 let detail_visible = expanded || self.tool_detail_motion.contains_key(call_id);
-                let summary = if display.screenshot_mode {
-                    String::new()
-                } else {
-                    tool_summary(input)
-                };
+                let summary = tool_summary(input);
                 // Pretty-printing the arguments and stripping ANSI from the
                 // whole output is the costly part of a tool row, and it was
                 // done for every collapsed row on every frame. The detail
@@ -4197,6 +4210,7 @@ impl Panel {
                     .flex_none()
                     .flex_col()
                     .overflow_hidden()
+                    .mb(px(6.0))
                     .child(crate::tool_icon::animate_running(
                         div()
                             .debug_selector(|| "tool-header".into())
@@ -4209,15 +4223,6 @@ impl Panel {
                             .py(px(2.0))
                             .text_size(px(13.5))
                             .line_height(px(20.0))
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left(px(17.))
-                                    .top_0()
-                                    .bottom_0()
-                                    .w(px(1.))
-                                    .bg(Theme::global().PANEL_BORDER),
-                            )
                             .child(crate::tool_icon::render_thread_badge_with_label(
                                 name,
                                 *done,
@@ -4239,7 +4244,7 @@ impl Panel {
                                         .overflow_hidden()
                                         .whitespace_nowrap()
                                         .text_size(px(12.0))
-                                        .text_color(Theme::global().TEXT_FAINT)
+                                        .text_color(Theme::global().TEXT_DIM)
                                         .child(text_selection::plain(
                                             self.transcript_selection.clone(),
                                             format!("tool-summary-{index}"),
@@ -4856,79 +4861,8 @@ impl Render for Panel {
         let steady_enabled = self.stick_to_bottom
             && !instant_motion
             && !crate::config::get().appearance.reduce_motion;
-        let short_viewport = window.viewport_size().height < px(400.);
         let transcript = if fresh_session {
-            div()
-                .debug_selector(|| "fresh-session".into())
-                .size_full()
-                .flex()
-                // Short windows anchor the composer (and its pill row below)
-                // to the bottom so it never spills into the footer.
-                .map(|el| {
-                    if short_viewport {
-                        el.items_end()
-                    } else {
-                        el.items_center()
-                    }
-                })
-                .justify_center()
-                .px_4()
-                .pb(px(if short_viewport { 8. } else { 64. }))
-                .child(
-                    div()
-                        .relative()
-                        .w_full()
-                        .max_w(px(760.0))
-                        .flex()
-                        .flex_col()
-                        .gap(px(18.0))
-                        .child(
-                            div()
-                                .debug_selector(|| "fresh-session-heading".into())
-                                .font_family(Theme::global().FONT_UI)
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_size(px(30.0))
-                                .line_height(px(36.0))
-                                .text_color(Theme::global().TEXT)
-                                .child("What would you like to work on?"),
-                        )
-                        .child(
-                            div()
-                                .relative()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .children(self.render_prompt_queue(cx))
-                                .children(self.render_voice_pending())
-                                .child(self.render_composer(window, cx))
-                                .child(startup::input_marker(input_bounds.clone())),
-                        )
-                        .when(!short_viewport, |el| el.child(
-                            div().absolute().top(relative(1.0)).w_full()
-                                .pt(px(16.0)).flex().flex_wrap().gap(px(9.0))
-                                .children([
-                                    ("Fix a failing test", "Run the tests and fix whatever fails"),
-                                    ("Split work across agents", "/swarm "),
-                                    ("Review my changes", "/review"),
-                                    ("Explore this project", "Explore this project and suggest where to start"),
-                                ].into_iter().enumerate().map(|(index, (label, prompt))| {
-                                    div().id(("fresh-suggestion", index))
-                                        .px(px(14.0)).h(px(38.0)).flex().items_center()
-                                        .rounded_full().bg(Theme::global().HEADER_BG)
-                                        .border_1().border_color(Theme::global().PANEL_BORDER)
-                                        .cursor_pointer().text_size(px(12.5))
-                                        .text_color(Theme::global().TEXT_DIM)
-                                        .hover(|el| el.bg(Theme::global().HEADER_BG).text_color(Theme::global().TEXT))
-                                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _, window, cx| {
-                                            this.input.update(cx, |input, cx| input.set_content(prompt.to_owned(), cx));
-                                            window.focus(&this.input.read(cx).focus_handle(cx), cx);
-                                            cx.notify();
-                                        }))
-                                        .child(label)
-                                }))
-                        )),
-                )
-                .into_any_element()
+            self.render_home(input_bounds.clone(), window, cx)
         } else if row_count == 0 {
             transcript_shell.into_any_element()
         } else {
@@ -5102,13 +5036,13 @@ impl Render for Panel {
                         div()
                             .w_full()
                             .flex_none()
-                            .px_4()
+                            .px(px(home::side_padding(window)))
                             .flex()
                             .justify_center()
                             .child(
                                 div()
                                     .w_full()
-                                    .max_w(px(760.))
+                                    .max_w(px(home::COLUMN_WIDTH))
                                     .relative()
                                     .flex()
                                     .flex_col()
@@ -5484,6 +5418,8 @@ impl Render for Panel {
                         None
                     }
                 }).collect();
+                let changes_tab = self.side_pane_changes;
+                let maximize_review = self.latest_change_review(cx);
                 return div()
                     .size_full()
                     .flex()
@@ -5513,31 +5449,85 @@ impl Render for Panel {
                                     .gap_1()
                                     .text_size(px(12.5))
                                     .font_family(theme.FONT_UI)
-                                    .child(
+                                    .child({
+                                        let tab = |label: &'static str, active: bool| {
+                                            div()
+                                                .px_3()
+                                                .py_1()
+                                                .rounded_full()
+                                                .cursor_pointer()
+                                                .when(active, |el| {
+                                                    el.border_1()
+                                                        .border_color(theme.TEXT_FAINT.opacity(0.4))
+                                                        .font_weight(FontWeight::MEDIUM)
+                                                        .text_color(theme.TEXT)
+                                                })
+                                                .when(!active, |el| {
+                                                    el.border_1()
+                                                        .border_color(gpui::transparent_black())
+                                                        .text_color(theme.TEXT_DIM)
+                                                        .hover(|el| el.text_color(theme.TEXT))
+                                                })
+                                                .child(label)
+                                        };
                                         div()
-                                            .debug_selector(|| "plan-tab-active".into())
-                                            .px_3()
-                                            .py_1()
+                                            .flex()
+                                            .gap_1()
+                                            .child(
+                                                tab("Plan", !changes_tab)
+                                                    .id("plan-tab")
+                                                    .debug_selector(|| "plan-tab-active".into())
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        this.side_pane_changes = false;
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            .child(
+                                                tab("Changes", changes_tab)
+                                                    .id("changes-tab")
+                                                    .debug_selector(|| "changes-tab".into())
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        this.side_pane_changes = true;
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                    })
+                                    .child(div().flex_1())
+                                    .children(maximize_review.map(|review| {
+                                        let focus = self.focus_handle.clone();
+                                        div()
+                                            .id("changes-maximize")
+                                            .debug_selector(|| "changes-maximize".into())
+                                            .size(px(26.))
                                             .rounded_full()
-                                            .border_1()
-                                            .border_color(theme.TEXT_FAINT.opacity(0.4))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .text_color(theme.TEXT)
-                                            .child("Plan"),
-                                    )
-                                    .child(div().px_2p5().py_1().text_color(theme.TEXT_DIM).child("Changes"))
-                                    .child(div().flex_1()),
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .cursor_pointer()
+                                            .text_size(px(14.))
+                                            .text_color(theme.TEXT_DIM)
+                                            .hover(|el| el.bg(theme.USER_BG).text_color(theme.TEXT))
+                                            .child("⤢")
+                                            .on_click(move |_, window, cx| {
+                                                focus.focus(window, cx);
+                                                window.dispatch_action(Box::new(review.clone()), cx);
+                                                cx.stop_propagation();
+                                            })
+                                    })),
                             )
                             .child(div().h(px(10.)))
-                            .child(render_todo_card_with_style(
-                                payload,
-                                true,
-                                "pinned-todo",
-                                &self.transcript_selection,
-                                window,
-                                cx,
-                            ))
-                            .when(!background.is_empty(), |pane| {
+                            .when(changes_tab, |pane| pane.child(self.render_changes_list(cx)))
+                            .when(!changes_tab, |pane| {
+                                pane.child(render_todo_card_with_style(
+                                    payload,
+                                    true,
+                                    "pinned-todo",
+                                    &self.transcript_selection,
+                                    window,
+                                    cx,
+                                ))
+                            })
+                            .when(!changes_tab && !background.is_empty(), |pane| {
                                 pane.child(
                                     div()
                                         .mt_4()

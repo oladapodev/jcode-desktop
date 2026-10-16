@@ -1034,19 +1034,21 @@ impl Workspace {
                                             .font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme.TEXT)
                                             .child(active_title.clone()))
                                         .child(div().flex_none().size(px(7.0)).rounded_full().bg(active_color)))
-                                    .child(div().h(px(17.0)).flex().items_center().gap(px(8.0))
+                                    .child(div().h(px(17.0)).min_w_0().flex().items_center().gap(px(8.0))
                                         .text_size(px(11.5)).line_height(px(17.0))
                                         .text_color(theme.TEXT_FAINT).whitespace_nowrap()
-                                        .child(project.clone())
+                                        // Long project names and branches ellipsize;
+                                        // the agent count always stays visible.
+                                        .child(div().min_w_0().truncate().child(project.clone()))
                                         .when_some(branch.clone(), |el, branch| el
-                                            .child(div().text_color(theme.PANEL_BORDER_FOCUS).child("/"))
-                                            .child(branch))
+                                            .child(div().flex_none().text_color(theme.PANEL_BORDER_FOCUS).child("/"))
+                                            .child(div().min_w_0().truncate().child(branch)))
                                         .when(agents > 0, |el| el
-                                            .child(div().text_color(theme.PANEL_BORDER_FOCUS).child("/"))
-                                            .child(div().flex().items_center().gap(px(2.0))
+                                            .child(div().flex_none().text_color(theme.PANEL_BORDER_FOCUS).child("/"))
+                                            .child(div().flex_none().flex().items_center().gap(px(2.0))
                                                 .children((0..agents.min(4)).map(|_| div()
                                                     .size(px(7.0)).rounded_full().bg(theme.ACCENT))))
-                                            .child(format!("{agents} agents"))),
+                                            .child(div().flex_none().child(format!("{agents} agents")))),
                             )))
                     )
                 }
